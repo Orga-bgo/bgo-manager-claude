@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.mgomanager.app.data.local.preferences.SettingsDataStore
 import com.mgomanager.app.data.model.Account
 import com.mgomanager.app.data.model.BackupResult
+import com.mgomanager.app.data.model.RestoreResult
 import com.mgomanager.app.data.repository.AccountRepository
 import com.mgomanager.app.data.repository.BackupRepository
 import com.mgomanager.app.domain.usecase.BackupRequest
@@ -20,7 +21,9 @@ data class HomeUiState(
     val susCount: Int = 0,
     val isLoading: Boolean = false,
     val showBackupDialog: Boolean = false,
-    val backupResult: BackupResult? = null
+    val backupResult: BackupResult? = null,
+    val restoreResult: RestoreResult? = null,
+    val showRestoreConfirm: Long? = null // Account ID to restore
 )
 
 @HiltViewModel
@@ -112,5 +115,31 @@ class HomeViewModel @Inject constructor(
 
     fun clearBackupResult() {
         _uiState.update { it.copy(backupResult = null) }
+    }
+
+    fun showRestoreConfirm(accountId: Long) {
+        _uiState.update { it.copy(showRestoreConfirm = accountId) }
+    }
+
+    fun hideRestoreConfirm() {
+        _uiState.update { it.copy(showRestoreConfirm = null) }
+    }
+
+    fun restoreAccount(accountId: Long) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, showRestoreConfirm = null) }
+
+            val result = backupRepository.restoreBackup(accountId)
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    restoreResult = result
+                )
+            }
+        }
+    }
+
+    fun clearRestoreResult() {
+        _uiState.update { it.copy(restoreResult = null) }
     }
 }

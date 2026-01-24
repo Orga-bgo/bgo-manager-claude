@@ -80,10 +80,9 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Account grid
+            // Account list (full width)
             LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                columns = GridCells.Fixed(1),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(uiState.accounts) { account ->
@@ -92,7 +91,9 @@ fun HomeScreen(
                         onCardClick = {
                             navController.navigate(Screen.Detail.createRoute(account.id))
                         },
-                        onRestoreClick = { /* TODO: Show restore confirmation */ }
+                        onRestoreClick = {
+                            viewModel.showRestoreConfirm(account.id)
+                        }
                     )
                 }
             }
@@ -145,6 +146,56 @@ fun HomeScreen(
                     },
                     confirmButton = {
                         TextButton(onClick = { viewModel.clearBackupResult() }) {
+                            Text("OK")
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    // Show restore confirmation
+    uiState.showRestoreConfirm?.let { accountId ->
+        val account = uiState.accounts.find { it.id == accountId }
+        AlertDialog(
+            onDismissRequest = { viewModel.hideRestoreConfirm() },
+            title = { Text("Wiederherstellung") },
+            text = { Text("Account '${account?.fullName}' wiederherstellen?") },
+            confirmButton = {
+                TextButton(onClick = { viewModel.restoreAccount(accountId) }) {
+                    Text("Ja")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.hideRestoreConfirm() }) {
+                    Text("Nein")
+                }
+            }
+        )
+    }
+
+    // Show restore result
+    uiState.restoreResult?.let { result ->
+        when (result) {
+            is com.mgomanager.app.data.model.RestoreResult.Success -> {
+                AlertDialog(
+                    onDismissRequest = { viewModel.clearRestoreResult() },
+                    title = { Text("Wiederherstellung erfolgreich!") },
+                    text = { Text("Account '${result.accountName}' wurde erfolgreich wiederhergestellt.") },
+                    confirmButton = {
+                        TextButton(onClick = { viewModel.clearRestoreResult() }) {
+                            Text("OK")
+                        }
+                    }
+                )
+            }
+            is com.mgomanager.app.data.model.RestoreResult.Failure -> {
+                AlertDialog(
+                    onDismissRequest = { viewModel.clearRestoreResult() },
+                    title = { Text("Wiederherstellung fehlgeschlagen") },
+                    text = { Text(result.error) },
+                    confirmButton = {
+                        TextButton(onClick = { viewModel.clearRestoreResult() }) {
                             Text("OK")
                         }
                     }

@@ -30,11 +30,11 @@ class MGOApplication : Application() {
             Timber.plant(Timber.DebugTree())
         }
 
-        // libsu configuration
+        // libsu configuration - CRITICAL for root access
         com.topjohnwu.superuser.Shell.enableVerboseLogging = BuildConfig.DEBUG
         com.topjohnwu.superuser.Shell.setDefaultBuilder(
             com.topjohnwu.superuser.Shell.Builder.create()
-                .setFlags(com.topjohnwu.superuser.Shell.FLAG_REDIRECT_STDERR)
+                .setFlags(com.topjohnwu.superuser.Shell.FLAG_REDIRECT_STDERR or com.topjohnwu.superuser.Shell.FLAG_MOUNT_MASTER)
                 .setTimeout(10)
         )
 
