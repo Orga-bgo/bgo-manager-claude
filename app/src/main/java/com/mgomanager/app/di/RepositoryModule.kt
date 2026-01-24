@@ -7,6 +7,7 @@ import com.mgomanager.app.data.repository.AccountRepository
 import com.mgomanager.app.data.repository.BackupRepository
 import com.mgomanager.app.data.repository.LogRepository
 import com.mgomanager.app.domain.usecase.CreateBackupUseCase
+import com.mgomanager.app.domain.usecase.RestoreBackupUseCase
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -37,8 +38,9 @@ object RepositoryModule {
     @Provides
     @Singleton
     fun provideBackupRepository(
-        createBackupUseCase: CreateBackupUseCase
+        createBackupUseCase: CreateBackupUseCase,
+        restoreBackupUseCase: RestoreBackupUseCase
     ): BackupRepository {
-        return BackupRepository(createBackupUseCase)
+        return BackupRepository(createBackupUseCase, restoreBackupUseCase)
     }
 }

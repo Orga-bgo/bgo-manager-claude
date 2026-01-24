@@ -13,7 +13,7 @@ import com.mgomanager.app.data.local.database.entities.LogEntity
 @Database(
     entities = [AccountEntity::class, LogEntity::class],
     version = 1,
-    exportSchema = true
+    exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun accountDao(): AccountDao
