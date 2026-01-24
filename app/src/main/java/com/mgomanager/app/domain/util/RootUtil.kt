@@ -31,9 +31,9 @@ class RootUtil @Inject constructor() {
             // Get new shell - this will trigger Magisk/SuperSU dialog
             val shell = Shell.getShell()
 
-            // Verify root actually works by executing a test command
+            // Verify root actually works by executing a test command with su
             if (shell.isRoot) {
-                val testResult = Shell.cmd("id").exec()
+                val testResult = Shell.su("id").exec()
                 testResult.isSuccess && testResult.out.any { it.contains("uid=0") }
             } else {
                 false
@@ -54,7 +54,8 @@ class RootUtil @Inject constructor() {
                 return@withContext Result.failure(Exception("No root access"))
             }
 
-            val result = Shell.cmd(command).exec()
+            // Use Shell.su() instead of Shell.cmd() to execute with root
+            val result = Shell.su(command).exec()
             if (result.isSuccess) {
                 Result.success(result.out.joinToString("\n"))
             } else {
@@ -77,7 +78,8 @@ class RootUtil @Inject constructor() {
                     return@withContext Result.failure(Exception("No root access"))
                 }
 
-                val result = Shell.cmd(*commands.toTypedArray()).exec()
+                // Use Shell.su() instead of Shell.cmd() to execute with root
+                val result = Shell.su(*commands.toTypedArray()).exec()
                 if (result.isSuccess) {
                     Result.success(result.out)
                 } else {
