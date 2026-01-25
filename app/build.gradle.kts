@@ -56,6 +56,10 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // SSHJ library packaging conflicts
+            excludes += "/META-INF/LICENSE*"
+            excludes += "/META-INF/NOTICE*"
+            excludes += "/META-INF/DEPENDENCIES"
         }
     }
 }
@@ -101,6 +105,9 @@ dependencies {
 
     // Logging
     implementation("com.jakewharton.timber:timber:5.0.1")
+
+    // SSH/SFTP (for server sync)
+    implementation("com.hierynomus:sshj:0.38.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

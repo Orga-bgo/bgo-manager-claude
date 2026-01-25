@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.mgomanager.app.data.local.preferences.SettingsDataStore
 import com.mgomanager.app.domain.usecase.ExportImportUseCase
 import com.mgomanager.app.domain.util.RootUtil
+import com.mgomanager.app.domain.util.SSHSyncService
+import com.mgomanager.app.domain.util.SSHOperationResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
@@ -22,7 +24,19 @@ data class SettingsUiState(
     val exportResult: String? = null,
     val importResult: String? = null,
     val isExporting: Boolean = false,
-    val isImporting: Boolean = false
+    val isImporting: Boolean = false,
+    // SSH settings
+    val sshPrivateKeyPath: String = "/storage/emulated/0/.ssh/id_ed25519",
+    val sshServer: String = "",
+    val sshBackupPath: String = "/home/user/monopolygo/backups/",
+    val sshAutoCheckOnStart: Boolean = false,
+    val sshAutoUploadOnExport: Boolean = false,
+    val sshLastSyncTimestamp: Long = 0L,
+    val sshKeyPathSaved: Boolean = false,
+    val sshServerSaved: Boolean = false,
+    val sshBackupPathSaved: Boolean = false,
+    val sshTestResult: String? = null,
+    val isSshTesting: Boolean = false
 )
 
 @HiltViewModel
@@ -30,6 +44,7 @@ class SettingsViewModel @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
     private val rootUtil: RootUtil,
     private val exportImportUseCase: ExportImportUseCase,
+    private val sshSyncService: SSHSyncService,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -42,7 +57,7 @@ class SettingsViewModel @Inject constructor(
 
     private fun loadSettings() {
         viewModelScope.launch {
-            // Load settings from DataStore
+            // Load basic settings from DataStore
             combine(
                 settingsDataStore.accountPrefix,
                 settingsDataStore.backupRootPath,
@@ -53,6 +68,39 @@ class SettingsViewModel @Inject constructor(
                         accountPrefix = prefix,
                         backupRootPath = path,
                         appStartCount = count
+                    )
+                }
+            }.collect { }
+        }
+
+        // Load SSH settings (split into separate collectors due to combine limit of 5 flows)
+        viewModelScope.launch {
+            combine(
+                settingsDataStore.sshPrivateKeyPath,
+                settingsDataStore.sshServer,
+                settingsDataStore.sshBackupPath
+            ) { keyPath, server, backupPath ->
+                _uiState.update {
+                    it.copy(
+                        sshPrivateKeyPath = keyPath,
+                        sshServer = server,
+                        sshBackupPath = backupPath
+                    )
+                }
+            }.collect { }
+        }
+
+        viewModelScope.launch {
+            combine(
+                settingsDataStore.sshAutoCheckOnStart,
+                settingsDataStore.sshAutoUploadOnExport,
+                settingsDataStore.sshLastSyncTimestamp
+            ) { autoCheck, autoUpload, lastSync ->
+                _uiState.update {
+                    it.copy(
+                        sshAutoCheckOnStart = autoCheck,
+                        sshAutoUploadOnExport = autoUpload,
+                        sshLastSyncTimestamp = lastSync
                     )
                 }
             }.collect { }
@@ -126,5 +174,72 @@ class SettingsViewModel @Inject constructor(
 
     fun clearImportResult() {
         _uiState.update { it.copy(importResult = null) }
+    }
+
+    // ========== SSH Settings Functions ==========
+
+    fun updateSshPrivateKeyPath(path: String) {
+        viewModelScope.launch {
+            settingsDataStore.setSshPrivateKeyPath(path)
+            _uiState.update { it.copy(sshKeyPathSaved = true) }
+        }
+    }
+
+    fun resetSshKeyPathSaved() {
+        _uiState.update { it.copy(sshKeyPathSaved = false) }
+    }
+
+    fun updateSshServer(server: String) {
+        viewModelScope.launch {
+            settingsDataStore.setSshServer(server)
+            _uiState.update { it.copy(sshServerSaved = true) }
+        }
+    }
+
+    fun resetSshServerSaved() {
+        _uiState.update { it.copy(sshServerSaved = false) }
+    }
+
+    fun updateSshBackupPath(path: String) {
+        viewModelScope.launch {
+            settingsDataStore.setSshBackupPath(path)
+            _uiState.update { it.copy(sshBackupPathSaved = true) }
+        }
+    }
+
+    fun resetSshBackupPathSaved() {
+        _uiState.update { it.copy(sshBackupPathSaved = false) }
+    }
+
+    fun updateSshAutoCheckOnStart(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsDataStore.setSshAutoCheckOnStart(enabled)
+        }
+    }
+
+    fun updateSshAutoUploadOnExport(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsDataStore.setSshAutoUploadOnExport(enabled)
+        }
+    }
+
+    fun testSshConnection() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSshTesting = true, sshTestResult = null) }
+            val result = sshSyncService.testConnection()
+            val message = when (result) {
+                is SSHOperationResult.Success -> result.message
+                is SSHOperationResult.Error -> result.message
+            }
+            _uiState.update { it.copy(isSshTesting = false, sshTestResult = message) }
+        }
+    }
+
+    fun clearSshTestResult() {
+        _uiState.update { it.copy(sshTestResult = null) }
+    }
+
+    fun formatLastSyncTime(): String {
+        return sshSyncService.formatTimestamp(_uiState.value.sshLastSyncTimestamp)
     }
 }

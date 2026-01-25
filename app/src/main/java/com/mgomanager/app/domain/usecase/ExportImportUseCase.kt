@@ -5,6 +5,8 @@ import android.os.Environment
 import com.mgomanager.app.data.local.preferences.SettingsDataStore
 import com.mgomanager.app.data.repository.AccountRepository
 import com.mgomanager.app.data.repository.LogRepository
+import com.mgomanager.app.domain.util.SSHSyncService
+import com.mgomanager.app.domain.util.SSHOperationResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -21,7 +23,8 @@ import javax.inject.Inject
 class ExportImportUseCase @Inject constructor(
     private val accountRepository: AccountRepository,
     private val settingsDataStore: SettingsDataStore,
-    private val logRepository: LogRepository
+    private val logRepository: LogRepository,
+    private val sshSyncService: SSHSyncService
 ) {
 
     companion object {
@@ -75,7 +78,28 @@ class ExportImportUseCase @Inject constructor(
             }
 
             logRepository.logInfo("EXPORT", "Export completed: ${zipFile.absolutePath}")
-            Result.success("Export gespeichert unter:\n${zipFile.absolutePath}")
+
+            // Auto-upload to SSH server if enabled
+            val autoUpload = settingsDataStore.sshAutoUploadOnExport.first()
+            val sshServer = settingsDataStore.sshServer.first()
+
+            if (autoUpload && sshServer.isNotBlank()) {
+                logRepository.logInfo("EXPORT", "Auto-uploading to SSH server...")
+                val uploadResult = sshSyncService.uploadZip(zipFile.absolutePath)
+
+                when (uploadResult) {
+                    is SSHOperationResult.Success -> {
+                        logRepository.logInfo("EXPORT", "Auto-upload successful")
+                        Result.success("Export gespeichert und hochgeladen:\n${zipFile.absolutePath}")
+                    }
+                    is SSHOperationResult.Error -> {
+                        logRepository.logError("EXPORT", "Auto-upload failed: ${uploadResult.message}")
+                        Result.success("Export gespeichert (Upload fehlgeschlagen: ${uploadResult.message}):\n${zipFile.absolutePath}")
+                    }
+                }
+            } else {
+                Result.success("Export gespeichert unter:\n${zipFile.absolutePath}")
+            }
 
         } catch (e: Exception) {
             logRepository.logError("EXPORT", "Export failed: ${e.message}", exception = e)

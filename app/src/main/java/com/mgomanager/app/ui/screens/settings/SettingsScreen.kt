@@ -29,9 +29,17 @@ fun SettingsScreen(
     var prefixInput by remember { mutableStateOf("") }
     var pathInput by remember { mutableStateOf("") }
 
+    // SSH settings state
+    var sshKeyPathInput by remember { mutableStateOf("") }
+    var sshServerInput by remember { mutableStateOf("") }
+    var sshBackupPathInput by remember { mutableStateOf("") }
+
     LaunchedEffect(uiState) {
         prefixInput = uiState.accountPrefix
         pathInput = uiState.backupRootPath
+        sshKeyPathInput = uiState.sshPrivateKeyPath
+        sshServerInput = uiState.sshServer
+        sshBackupPathInput = uiState.sshBackupPath
     }
 
     // Refresh root status when screen is loaded
@@ -178,6 +186,143 @@ fun SettingsScreen(
                 }
             }
 
+            // SSH Server Sync card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "SSH Server Sync",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    OutlinedTextField(
+                        value = sshKeyPathInput,
+                        onValueChange = {
+                            sshKeyPathInput = it
+                            viewModel.resetSshKeyPathSaved()
+                        },
+                        label = { Text("Private Key Pfad") },
+                        placeholder = { Text("/storage/emulated/0/.ssh/id_ed25519") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        trailingIcon = {
+                            IconButton(onClick = { viewModel.updateSshPrivateKeyPath(sshKeyPathInput) }) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = "Speichern",
+                                    tint = if (uiState.sshKeyPathSaved) StatusGreen else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    )
+
+                    OutlinedTextField(
+                        value = sshServerInput,
+                        onValueChange = {
+                            sshServerInput = it
+                            viewModel.resetSshServerSaved()
+                        },
+                        label = { Text("Server (user@host:port)") },
+                        placeholder = { Text("user@192.168.1.100:22") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        trailingIcon = {
+                            IconButton(onClick = { viewModel.updateSshServer(sshServerInput) }) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = "Speichern",
+                                    tint = if (uiState.sshServerSaved) StatusGreen else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    )
+
+                    OutlinedTextField(
+                        value = sshBackupPathInput,
+                        onValueChange = {
+                            sshBackupPathInput = it
+                            viewModel.resetSshBackupPathSaved()
+                        },
+                        label = { Text("Server Backup-Pfad") },
+                        placeholder = { Text("/home/user/monopolygo/backups/") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        trailingIcon = {
+                            IconButton(onClick = { viewModel.updateSshBackupPath(sshBackupPathInput) }) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = "Speichern",
+                                    tint = if (uiState.sshBackupPathSaved) StatusGreen else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    )
+
+                    // Auto-sync checkboxes
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = uiState.sshAutoCheckOnStart,
+                            onCheckedChange = { viewModel.updateSshAutoCheckOnStart(it) }
+                        )
+                        Text(
+                            text = "App-Start prüfen",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Checkbox(
+                            checked = uiState.sshAutoUploadOnExport,
+                            onCheckedChange = { viewModel.updateSshAutoUploadOnExport(it) }
+                        )
+                        Text(
+                            text = "Export auto-upload",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+
+                    // Test button and last sync info
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = { viewModel.testSshConnection() },
+                            enabled = !uiState.isSshTesting && sshServerInput.isNotBlank()
+                        ) {
+                            if (uiState.isSshTesting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text("SSH Testen")
+                            }
+                        }
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "Letzter Sync:",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                            Text(
+                                text = viewModel.formatLastSyncTime(),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            }
+
             // System card
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -286,6 +431,20 @@ fun SettingsScreen(
             text = { Text(result) },
             confirmButton = {
                 TextButton(onClick = { viewModel.clearImportResult() }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
+    // SSH test result dialog
+    uiState.sshTestResult?.let { result ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearSshTestResult() },
+            title = { Text("SSH-Verbindungstest") },
+            text = { Text(result) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearSshTestResult() }) {
                     Text("OK")
                 }
             }
