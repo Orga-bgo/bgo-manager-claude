@@ -1,19 +1,21 @@
 package com.mgomanager.app.domain.util
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import com.mgomanager.app.data.local.preferences.SettingsDataStore
 import com.mgomanager.app.data.repository.LogRepository
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import net.schmizz.sshj.SSHClient
-import net.schmizz.sshj.sftp.SFTPClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import net.schmizz.sshj.userauth.keyprovider.KeyProvider
 import timber.log.Timber
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -48,6 +50,7 @@ sealed class SSHOperationResult {
  */
 @Singleton
 class SSHSyncService @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val settingsDataStore: SettingsDataStore,
     private val logRepository: LogRepository
 ) {
@@ -56,6 +59,17 @@ class SSHSyncService @Inject constructor(
         private const val TAG = "SSHSyncService"
         private const val CONNECTION_TIMEOUT_MS = 30000
         private const val READ_TIMEOUT_MS = 60000
+    }
+
+    /**
+     * Check if network is available
+     */
+    fun isNetworkAvailable(): Boolean {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+               capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     /**
@@ -94,6 +108,11 @@ class SSHSyncService @Inject constructor(
      * @return SSHOperationResult with connection test result
      */
     suspend fun testConnection(): SSHOperationResult = withContext(Dispatchers.IO) {
+        // Check network availability first
+        if (!isNetworkAvailable()) {
+            return@withContext SSHOperationResult.Error("Keine Netzwerkverbindung. Bitte WLAN oder mobile Daten aktivieren.")
+        }
+
         val serverString = settingsDataStore.sshServer.first()
         val keyPath = settingsDataStore.sshPrivateKeyPath.first()
         val remotePath = settingsDataStore.sshBackupPath.first()
@@ -161,6 +180,11 @@ class SSHSyncService @Inject constructor(
      * @return ServerBackupCheckResult with the latest backup info
      */
     suspend fun checkLatestServerBackup(): ServerBackupCheckResult = withContext(Dispatchers.IO) {
+        // Check network availability first
+        if (!isNetworkAvailable()) {
+            return@withContext ServerBackupCheckResult.Error("Keine Netzwerkverbindung")
+        }
+
         val serverString = settingsDataStore.sshServer.first()
         val keyPath = settingsDataStore.sshPrivateKeyPath.first()
         val remotePath = settingsDataStore.sshBackupPath.first()
@@ -231,6 +255,11 @@ class SSHSyncService @Inject constructor(
      * @return SSHOperationResult with upload result
      */
     suspend fun uploadZip(localZipPath: String): SSHOperationResult = withContext(Dispatchers.IO) {
+        // Check network availability first
+        if (!isNetworkAvailable()) {
+            return@withContext SSHOperationResult.Error("Keine Netzwerkverbindung. Upload nicht möglich.")
+        }
+
         val serverString = settingsDataStore.sshServer.first()
         val keyPath = settingsDataStore.sshPrivateKeyPath.first()
         val remotePath = settingsDataStore.sshBackupPath.first()
@@ -303,6 +332,11 @@ class SSHSyncService @Inject constructor(
      * @return SSHOperationResult with download result (includes file path on success)
      */
     suspend fun downloadLatestBackup(localDestination: String): SSHOperationResult = withContext(Dispatchers.IO) {
+        // Check network availability first
+        if (!isNetworkAvailable()) {
+            return@withContext SSHOperationResult.Error("Keine Netzwerkverbindung. Download nicht möglich.")
+        }
+
         val serverString = settingsDataStore.sshServer.first()
         val keyPath = settingsDataStore.sshPrivateKeyPath.first()
         val remotePath = settingsDataStore.sshBackupPath.first()
