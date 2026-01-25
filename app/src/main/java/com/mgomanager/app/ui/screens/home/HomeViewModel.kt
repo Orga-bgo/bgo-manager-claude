@@ -23,7 +23,8 @@ data class HomeUiState(
     val showBackupDialog: Boolean = false,
     val backupResult: BackupResult? = null,
     val restoreResult: RestoreResult? = null,
-    val showRestoreConfirm: Long? = null // Account ID to restore
+    val showRestoreConfirm: Long? = null, // Account ID to restore
+    val showRestoreSuccessDialog: Boolean = false
 )
 
 @HiltViewModel
@@ -130,10 +131,12 @@ class HomeViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, showRestoreConfirm = null) }
 
             val result = backupRepository.restoreBackup(accountId)
+            val isSuccess = result is RestoreResult.Success
             _uiState.update {
                 it.copy(
                     isLoading = false,
-                    restoreResult = result
+                    restoreResult = if (!isSuccess) result else null,
+                    showRestoreSuccessDialog = isSuccess
                 )
             }
         }
@@ -141,5 +144,9 @@ class HomeViewModel @Inject constructor(
 
     fun clearRestoreResult() {
         _uiState.update { it.copy(restoreResult = null) }
+    }
+
+    fun hideRestoreSuccessDialog() {
+        _uiState.update { it.copy(showRestoreSuccessDialog = false) }
     }
 }

@@ -43,9 +43,14 @@ class RestoreBackupUseCase @Inject constructor(
             rootUtil.forceStopMonopolyGo().getOrThrow()
             logRepository.logInfo("RESTORE", "Monopoly Go gestoppt", account.fullName)
 
-            // Step 4: Copy directories back
-            copyBackupDirectory("${backupPath}DiskBasedCacheDirectory/", "$MGO_FILES_PATH/DiskBasedCacheDirectory/", account.fullName)
-            copyBackupDirectory("${backupPath}shared_prefs/", MGO_PREFS_PATH, account.fullName)
+            // Step 4: Remove old directories and copy backup directories
+            // First delete existing directories to prevent nested folder issues
+            rootUtil.executeCommand("rm -rf $MGO_FILES_PATH/DiskBasedCacheDirectory")
+            rootUtil.executeCommand("rm -rf $MGO_PREFS_PATH")
+
+            // Copy directories to parent (without trailing slashes to copy the folder itself)
+            copyBackupDirectory("${backupPath}DiskBasedCacheDirectory", "$MGO_FILES_PATH/", account.fullName)
+            copyBackupDirectory("${backupPath}shared_prefs", "$MGO_DATA_PATH/", account.fullName)
 
             // Step 5: Copy SSAID file back
             val ssaidFile = File("${backupPath}settings_ssaid.xml")

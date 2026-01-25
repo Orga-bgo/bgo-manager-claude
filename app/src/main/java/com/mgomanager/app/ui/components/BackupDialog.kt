@@ -43,21 +43,34 @@ fun BackupDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text("Facebook-Verbindung:")
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                     ) {
-                        Text("Facebook-Verbindung:", modifier = Modifier.align(androidx.compose.ui.Alignment.CenterVertically))
-                        RadioButton(
-                            selected = hasFacebookLink,
-                            onClick = { hasFacebookLink = true }
-                        )
-                        Text("Ja", modifier = Modifier.align(androidx.compose.ui.Alignment.CenterVertically))
-                        RadioButton(
-                            selected = !hasFacebookLink,
-                            onClick = { hasFacebookLink = false }
-                        )
-                        Text("Nein", modifier = Modifier.align(androidx.compose.ui.Alignment.CenterVertically))
+                        Row(
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            RadioButton(
+                                selected = hasFacebookLink,
+                                onClick = { hasFacebookLink = true }
+                            )
+                            Text("Ja")
+                        }
+                        Row(
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            RadioButton(
+                                selected = !hasFacebookLink,
+                                onClick = { hasFacebookLink = false }
+                            )
+                            Text("Nein")
+                        }
                     }
                 } else {
                     // Step 2: Facebook details
