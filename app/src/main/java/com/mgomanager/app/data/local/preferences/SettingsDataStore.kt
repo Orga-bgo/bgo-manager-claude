@@ -3,8 +3,10 @@ package com.mgomanager.app.data.local.preferences
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -30,8 +32,22 @@ class SettingsDataStore @Inject constructor(
         private val CURRENT_SESSION_ID = stringPreferencesKey("current_session_id")
         private val APP_START_COUNT = intPreferencesKey("app_start_count")
 
+        // SSH Server Sync settings
+        private val SSH_PRIVATE_KEY_PATH = stringPreferencesKey("ssh_private_key_path")
+        private val SSH_SERVER = stringPreferencesKey("ssh_server")
+        private val SSH_BACKUP_PATH = stringPreferencesKey("ssh_backup_path")
+        private val SSH_AUTO_CHECK_ON_START = booleanPreferencesKey("ssh_auto_check_on_start")
+        private val SSH_AUTO_UPLOAD_ON_EXPORT = booleanPreferencesKey("ssh_auto_upload_on_export")
+        private val SSH_LAST_SYNC_TIMESTAMP = longPreferencesKey("ssh_last_sync_timestamp")
+
+        // Account sorting settings
+        private val SORT_MODE = stringPreferencesKey("sort_mode")
+
         const val DEFAULT_PREFIX = "MGO_"
         const val DEFAULT_BACKUP_PATH = "/storage/emulated/0/mgo/backups/"
+        const val DEFAULT_SSH_KEY_PATH = "/storage/emulated/0/.ssh/id_ed25519"
+        const val DEFAULT_SSH_BACKUP_PATH = "/home/user/monopolygo/backups/"
+        const val DEFAULT_SORT_MODE = "lastPlayed"
     }
 
     /**
@@ -102,4 +118,120 @@ class SettingsDataStore @Inject constructor(
     }
 
     private fun generateNewSessionId(): String = UUID.randomUUID().toString()
+
+    // ========== SSH Server Sync Settings ==========
+
+    /**
+     * Get SSH private key path
+     */
+    val sshPrivateKeyPath: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[SSH_PRIVATE_KEY_PATH] ?: DEFAULT_SSH_KEY_PATH
+    }
+
+    /**
+     * Set SSH private key path
+     */
+    suspend fun setSshPrivateKeyPath(path: String) {
+        context.dataStore.edit { preferences ->
+            preferences[SSH_PRIVATE_KEY_PATH] = path
+        }
+    }
+
+    /**
+     * Get SSH server (format: user@host or user@host:port)
+     */
+    val sshServer: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[SSH_SERVER] ?: ""
+    }
+
+    /**
+     * Set SSH server
+     */
+    suspend fun setSshServer(server: String) {
+        context.dataStore.edit { preferences ->
+            preferences[SSH_SERVER] = server
+        }
+    }
+
+    /**
+     * Get SSH backup path on server
+     */
+    val sshBackupPath: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[SSH_BACKUP_PATH] ?: DEFAULT_SSH_BACKUP_PATH
+    }
+
+    /**
+     * Set SSH backup path on server
+     */
+    suspend fun setSshBackupPath(path: String) {
+        context.dataStore.edit { preferences ->
+            preferences[SSH_BACKUP_PATH] = path
+        }
+    }
+
+    /**
+     * Get auto-check on app start setting
+     */
+    val sshAutoCheckOnStart: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[SSH_AUTO_CHECK_ON_START] ?: false
+    }
+
+    /**
+     * Set auto-check on app start
+     */
+    suspend fun setSshAutoCheckOnStart(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[SSH_AUTO_CHECK_ON_START] = enabled
+        }
+    }
+
+    /**
+     * Get auto-upload on export setting
+     */
+    val sshAutoUploadOnExport: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[SSH_AUTO_UPLOAD_ON_EXPORT] ?: false
+    }
+
+    /**
+     * Set auto-upload on export
+     */
+    suspend fun setSshAutoUploadOnExport(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[SSH_AUTO_UPLOAD_ON_EXPORT] = enabled
+        }
+    }
+
+    /**
+     * Get last sync timestamp
+     */
+    val sshLastSyncTimestamp: Flow<Long> = context.dataStore.data.map { preferences ->
+        preferences[SSH_LAST_SYNC_TIMESTAMP] ?: 0L
+    }
+
+    /**
+     * Set last sync timestamp
+     */
+    suspend fun setSshLastSyncTimestamp(timestamp: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[SSH_LAST_SYNC_TIMESTAMP] = timestamp
+        }
+    }
+
+    // ========== Account Sorting Settings ==========
+
+    /**
+     * Get current sort mode (name, created, lastPlayed, prefixFirst)
+     */
+    val sortMode: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[SORT_MODE] ?: DEFAULT_SORT_MODE
+    }
+
+    /**
+     * Set sort mode
+     */
+    suspend fun setSortMode(mode: String) {
+        context.dataStore.edit { preferences ->
+            preferences[SORT_MODE] = mode
+        }
+    }
 }

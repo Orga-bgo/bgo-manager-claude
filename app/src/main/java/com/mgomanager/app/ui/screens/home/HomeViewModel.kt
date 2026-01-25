@@ -25,7 +25,10 @@ data class HomeUiState(
     val restoreResult: RestoreResult? = null,
     val showRestoreConfirm: Long? = null, // Account ID to restore
     val showRestoreSuccessDialog: Boolean = false,
-    val duplicateUserIdDialog: DuplicateUserIdInfo? = null // For duplicate check
+    val duplicateUserIdDialog: DuplicateUserIdInfo? = null, // For duplicate check
+    // Sorting
+    val sortMode: String = "lastPlayed",
+    val accountPrefix: String = "MGO_"
 )
 
 data class DuplicateUserIdInfo(
@@ -47,13 +50,54 @@ class HomeViewModel @Inject constructor(
     init {
         loadAccounts()
         loadStatistics()
+        loadSortSettings()
     }
 
     private fun loadAccounts() {
         viewModelScope.launch {
-            accountRepository.getAllAccounts().collect { accounts ->
-                _uiState.update { it.copy(accounts = accounts) }
+            combine(
+                accountRepository.getAllAccounts(),
+                settingsDataStore.sortMode,
+                settingsDataStore.accountPrefix
+            ) { accounts, sortMode, prefix ->
+                Triple(accounts, sortMode, prefix)
+            }.collect { (accounts, sortMode, prefix) ->
+                val sortedAccounts = sortAccounts(accounts, sortMode, prefix)
+                _uiState.update {
+                    it.copy(
+                        accounts = sortedAccounts,
+                        sortMode = sortMode,
+                        accountPrefix = prefix
+                    )
+                }
             }
+        }
+    }
+
+    private fun loadSortSettings() {
+        viewModelScope.launch {
+            settingsDataStore.sortMode.collect { mode ->
+                _uiState.update { it.copy(sortMode = mode) }
+            }
+        }
+    }
+
+    private fun sortAccounts(accounts: List<Account>, sortMode: String, prefix: String): List<Account> {
+        return when (sortMode) {
+            "name" -> accounts.sortedBy { it.fullName.lowercase() }
+            "created" -> accounts.sortedByDescending { it.createdAt }
+            "lastPlayed" -> accounts.sortedByDescending { it.lastPlayedAt }
+            "prefixFirst" -> accounts.sortedWith(compareBy(
+                { if (prefix.isNotBlank()) !it.fullName.startsWith(prefix) else false },
+                { it.fullName.lowercase() }
+            ))
+            else -> accounts.sortedByDescending { it.lastPlayedAt }
+        }
+    }
+
+    fun setSortMode(mode: String) {
+        viewModelScope.launch {
+            settingsDataStore.setSortMode(mode)
         }
     }
 

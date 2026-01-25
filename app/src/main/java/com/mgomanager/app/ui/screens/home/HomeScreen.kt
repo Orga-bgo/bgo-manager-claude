@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,6 +35,7 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var sortDropdownExpanded by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.fillMaxSize()
@@ -99,6 +101,93 @@ fun HomeScreen(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
+
+                // Sort dropdown row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Accounts (${uiState.totalCount})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Box {
+                        OutlinedButton(
+                            onClick = { sortDropdownExpanded = true },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = getSortLabel(uiState.sortMode),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Sortierung",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = sortDropdownExpanded,
+                            onDismissRequest = { sortDropdownExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Name (A-Z)") },
+                                onClick = {
+                                    viewModel.setSortMode("name")
+                                    sortDropdownExpanded = false
+                                },
+                                leadingIcon = {
+                                    if (uiState.sortMode == "name") {
+                                        Icon(Icons.Default.Settings, "Selected", modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Erstellt am") },
+                                onClick = {
+                                    viewModel.setSortMode("created")
+                                    sortDropdownExpanded = false
+                                },
+                                leadingIcon = {
+                                    if (uiState.sortMode == "created") {
+                                        Icon(Icons.Default.Settings, "Selected", modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Zuletzt gespielt") },
+                                onClick = {
+                                    viewModel.setSortMode("lastPlayed")
+                                    sortDropdownExpanded = false
+                                },
+                                leadingIcon = {
+                                    if (uiState.sortMode == "lastPlayed") {
+                                        Icon(Icons.Default.Settings, "Selected", modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Präfix zuerst") },
+                                onClick = {
+                                    viewModel.setSortMode("prefixFirst")
+                                    sortDropdownExpanded = false
+                                },
+                                leadingIcon = {
+                                    if (uiState.sortMode == "prefixFirst") {
+                                        Icon(Icons.Default.Settings, "Selected", modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
 
                 // Account list with header
                 Card(
@@ -302,4 +391,15 @@ fun AccountListItem(
             textAlign = TextAlign.Center
         )
     }
+}
+
+/**
+ * Get display label for sort mode
+ */
+private fun getSortLabel(sortMode: String): String = when (sortMode) {
+    "name" -> "Name (A-Z)"
+    "created" -> "Erstellt am"
+    "lastPlayed" -> "Zuletzt gespielt"
+    "prefixFirst" -> "Präfix zuerst"
+    else -> "Standard"
 }

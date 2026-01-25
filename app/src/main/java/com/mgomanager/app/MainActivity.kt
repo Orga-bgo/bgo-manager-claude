@@ -10,11 +10,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.rememberNavController
+import com.mgomanager.app.data.local.preferences.SettingsDataStore
 import com.mgomanager.app.domain.util.PermissionManager
 import com.mgomanager.app.domain.util.RootUtil
+import com.mgomanager.app.domain.util.SSHSyncService
+import com.mgomanager.app.domain.util.ServerBackupCheckResult
 import com.mgomanager.app.ui.navigation.AppNavGraph
 import com.mgomanager.app.ui.theme.MGOManagerTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -25,6 +29,12 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var permissionManager: PermissionManager
+
+    @Inject
+    lateinit var settingsDataStore: SettingsDataStore
+
+    @Inject
+    lateinit var sshSyncService: SSHSyncService
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,6 +47,10 @@ class MainActivity : ComponentActivity() {
                 var showPermissionDialog by remember { mutableStateOf(false) }
                 var errorMessage by remember { mutableStateOf<String?>(null) }
 
+                // SSH server backup check state
+                var showServerBackupDialog by remember { mutableStateOf(false) }
+                var serverBackupDate by remember { mutableStateOf("") }
+
                 LaunchedEffect(Unit) {
                     // Check prerequisites
                     val isRooted = rootUtil.requestRootAccess()
@@ -47,7 +61,22 @@ class MainActivity : ComponentActivity() {
                         !isRooted -> errorMessage = "Root-Zugriff erforderlich"
                         !hasPermissions -> showPermissionDialog = true
                         !isMGOInstalled -> errorMessage = "Monopoly Go nicht installiert"
-                        else -> isReady = true
+                        else -> {
+                            isReady = true
+
+                            // Check for newer server backup if auto-check is enabled
+                            val autoCheckEnabled = settingsDataStore.sshAutoCheckOnStart.first()
+                            if (autoCheckEnabled) {
+                                val serverResult = sshSyncService.checkLatestServerBackup()
+                                if (serverResult is ServerBackupCheckResult.Found) {
+                                    val localDate = sshSyncService.getLatestLocalBackupDate()
+                                    if (localDate == null || serverResult.date.after(localDate)) {
+                                        serverBackupDate = sshSyncService.formatDate(serverResult.date)
+                                        showServerBackupDialog = true
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -117,7 +146,34 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                         }
-                        isReady -> AppNavGraph(navController)
+                        isReady -> {
+                            AppNavGraph(navController)
+
+                            // Show server backup dialog if needed
+                            if (showServerBackupDialog) {
+                                AlertDialog(
+                                    onDismissRequest = { showServerBackupDialog = false },
+                                    title = { Text("Server-Backup verfügbar") },
+                                    text = {
+                                        Text("Ein neueres Backup wurde auf dem Server gefunden ($serverBackupDate).\n\nMöchtest du es importieren?")
+                                    },
+                                    confirmButton = {
+                                        TextButton(onClick = {
+                                            showServerBackupDialog = false
+                                            // Navigate to settings where import can be triggered
+                                            navController.navigate("settings")
+                                        }) {
+                                            Text("Zu Einstellungen")
+                                        }
+                                    },
+                                    dismissButton = {
+                                        TextButton(onClick = { showServerBackupDialog = false }) {
+                                            Text("Später")
+                                        }
+                                    }
+                                )
+                            }
+                        }
                         else -> Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
