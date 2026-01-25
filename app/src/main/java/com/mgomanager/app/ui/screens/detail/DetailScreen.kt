@@ -19,8 +19,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.mgomanager.app.data.model.SusLevel
 import com.mgomanager.app.ui.theme.StatusRed
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailScreen(
     navController: NavController,
@@ -311,6 +313,130 @@ fun DetailScreen(
                 }
             }
         )
+    }
+
+    // Edit dialog
+    if (uiState.showEditDialog) {
+        uiState.account?.let { account ->
+            var editName by remember { mutableStateOf(account.accountName) }
+            var editSusLevel by remember { mutableStateOf(account.susLevel) }
+            var editHasError by remember { mutableStateOf(account.hasError) }
+            var editFbUsername by remember { mutableStateOf(account.fbUsername ?: "") }
+            var editFbPassword by remember { mutableStateOf(account.fbPassword ?: "") }
+            var editFb2FA by remember { mutableStateOf(account.fb2FA ?: "") }
+            var editFbTempMail by remember { mutableStateOf(account.fbTempMail ?: "") }
+            var susDropdownExpanded by remember { mutableStateOf(false) }
+
+            AlertDialog(
+                onDismissRequest = { viewModel.hideEditDialog() },
+                title = { Text("Account bearbeiten") },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = editName,
+                            onValueChange = { editName = it },
+                            label = { Text("Name") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Sus Level dropdown
+                        ExposedDropdownMenuBox(
+                            expanded = susDropdownExpanded,
+                            onExpandedChange = { susDropdownExpanded = !susDropdownExpanded }
+                        ) {
+                            OutlinedTextField(
+                                value = editSusLevel.displayName,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Sus Level") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = susDropdownExpanded) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = susDropdownExpanded,
+                                onDismissRequest = { susDropdownExpanded = false }
+                            ) {
+                                SusLevel.values().forEach { level ->
+                                    DropdownMenuItem(
+                                        text = { Text(level.displayName) },
+                                        onClick = {
+                                            editSusLevel = level
+                                            susDropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // Error checkbox
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = editHasError,
+                                onCheckedChange = { editHasError = it }
+                            )
+                            Text("Hat Error")
+                        }
+
+                        if (account.hasFacebookLink) {
+                            Divider()
+                            Text("Facebook", style = MaterialTheme.typography.labelMedium)
+
+                            OutlinedTextField(
+                                value = editFbUsername,
+                                onValueChange = { editFbUsername = it },
+                                label = { Text("Username") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = editFbPassword,
+                                onValueChange = { editFbPassword = it },
+                                label = { Text("Passwort") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = editFb2FA,
+                                onValueChange = { editFb2FA = it },
+                                label = { Text("2FA") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = editFbTempMail,
+                                onValueChange = { editFbTempMail = it },
+                                label = { Text("Temp-Mail") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.updateAccount(
+                            name = editName,
+                            susLevel = editSusLevel,
+                            hasError = editHasError,
+                            fbUsername = if (account.hasFacebookLink) editFbUsername.ifBlank { null } else null,
+                            fbPassword = if (account.hasFacebookLink) editFbPassword.ifBlank { null } else null,
+                            fb2FA = if (account.hasFacebookLink) editFb2FA.ifBlank { null } else null,
+                            fbTempMail = if (account.hasFacebookLink) editFbTempMail.ifBlank { null } else null
+                        )
+                    }) {
+                        Text("Speichern")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.hideEditDialog() }) {
+                        Text("Abbrechen")
+                    }
+                }
+            )
+        }
     }
 
     // Restore success dialog with app launch option
