@@ -200,6 +200,13 @@ fun SettingsScreen(
                         Text("Logs anzeigen")
                     }
 
+                    OutlinedButton(
+                        onClick = { navController.navigate(Screen.IdCompare.route) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("ID-Vergleich")
+                    }
+
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(

@@ -10,6 +10,7 @@ import com.mgomanager.app.ui.screens.detail.DetailScreen
 import com.mgomanager.app.ui.screens.home.HomeScreen
 import com.mgomanager.app.ui.screens.settings.SettingsScreen
 import com.mgomanager.app.ui.screens.logs.LogScreen
+import com.mgomanager.app.ui.screens.idcompare.IdCompareScreen
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
@@ -18,6 +19,7 @@ sealed class Screen(val route: String) {
     }
     object Settings : Screen("settings")
     object Logs : Screen("logs")
+    object IdCompare : Screen("id_compare")
 }
 
 @Composable
@@ -41,6 +43,10 @@ fun AppNavGraph(navController: NavHostController) {
 
         composable(Screen.Logs.route) {
             LogScreen(navController = navController)
+        }
+
+        composable(Screen.IdCompare.route) {
+            IdCompareScreen(navController = navController)
         }
     }
 }
