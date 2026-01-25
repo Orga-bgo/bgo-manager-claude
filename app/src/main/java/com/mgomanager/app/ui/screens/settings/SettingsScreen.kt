@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import com.mgomanager.app.ui.theme.StatusGreen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -56,24 +57,38 @@ fun SettingsScreen(
 
             OutlinedTextField(
                 value = prefixInput,
-                onValueChange = { prefixInput = it },
+                onValueChange = {
+                    prefixInput = it
+                    viewModel.resetPrefixSaved()
+                },
                 label = { Text("Accountname-Präfix") },
                 modifier = Modifier.fillMaxWidth(),
                 trailingIcon = {
                     IconButton(onClick = { viewModel.updatePrefix(prefixInput) }) {
-                        Icon(Icons.Default.Check, contentDescription = "Speichern")
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = "Speichern",
+                            tint = if (uiState.prefixSaved) StatusGreen else MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 }
             )
 
             OutlinedTextField(
                 value = pathInput,
-                onValueChange = { pathInput = it },
+                onValueChange = {
+                    pathInput = it
+                    viewModel.resetPathSaved()
+                },
                 label = { Text("Backup-Pfad") },
                 modifier = Modifier.fillMaxWidth(),
                 trailingIcon = {
                     IconButton(onClick = { viewModel.updateBackupPath(pathInput) }) {
-                        Icon(Icons.Default.Check, contentDescription = "Speichern")
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = "Speichern",
+                            tint = if (uiState.pathSaved) StatusGreen else MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 }
             )

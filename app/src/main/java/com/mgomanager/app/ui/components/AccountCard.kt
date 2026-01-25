@@ -14,7 +14,6 @@ import com.mgomanager.app.data.model.Account
 fun AccountCard(
     account: Account,
     onCardClick: () -> Unit,
-    onRestoreClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -73,16 +72,6 @@ fun AccountCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = account.getBorderColor()
                 )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Restore button full width
-            Button(
-                onClick = onRestoreClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("RESTORE")
             }
         }
     }

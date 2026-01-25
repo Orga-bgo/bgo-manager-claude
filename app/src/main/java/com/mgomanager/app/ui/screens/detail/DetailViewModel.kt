@@ -18,7 +18,8 @@ data class DetailUiState(
     val showEditDialog: Boolean = false,
     val showDeleteDialog: Boolean = false,
     val showRestoreDialog: Boolean = false,
-    val restoreResult: RestoreResult? = null
+    val restoreResult: RestoreResult? = null,
+    val showRestoreSuccessDialog: Boolean = false
 )
 
 @HiltViewModel
@@ -52,14 +53,20 @@ class DetailViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true) }
 
             val result = backupRepository.restoreBackup(account.id)
+            val isSuccess = result is RestoreResult.Success
             _uiState.update {
                 it.copy(
                     isLoading = false,
-                    restoreResult = result,
-                    showRestoreDialog = false
+                    restoreResult = if (!isSuccess) result else null,
+                    showRestoreDialog = false,
+                    showRestoreSuccessDialog = isSuccess
                 )
             }
         }
+    }
+
+    fun hideRestoreSuccessDialog() {
+        _uiState.update { it.copy(showRestoreSuccessDialog = false) }
     }
 
     fun showEditDialog() {

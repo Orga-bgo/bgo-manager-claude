@@ -13,7 +13,9 @@ data class SettingsUiState(
     val accountPrefix: String = "MGO_",
     val backupRootPath: String = "/storage/emulated/0/mgo/backups/",
     val isRootAvailable: Boolean = false,
-    val appStartCount: Int = 0
+    val appStartCount: Int = 0,
+    val prefixSaved: Boolean = false,
+    val pathSaved: Boolean = false
 )
 
 @HiltViewModel
@@ -64,12 +66,22 @@ class SettingsViewModel @Inject constructor(
     fun updatePrefix(prefix: String) {
         viewModelScope.launch {
             settingsDataStore.setAccountPrefix(prefix)
+            _uiState.update { it.copy(prefixSaved = true) }
         }
     }
 
     fun updateBackupPath(path: String) {
         viewModelScope.launch {
             settingsDataStore.setBackupRootPath(path)
+            _uiState.update { it.copy(pathSaved = true) }
         }
+    }
+
+    fun resetPrefixSaved() {
+        _uiState.update { it.copy(prefixSaved = false) }
+    }
+
+    fun resetPathSaved() {
+        _uiState.update { it.copy(pathSaved = false) }
     }
 }

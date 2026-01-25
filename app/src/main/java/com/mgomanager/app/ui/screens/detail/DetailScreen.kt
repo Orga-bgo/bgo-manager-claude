@@ -1,18 +1,26 @@
 package com.mgomanager.app.ui.screens.detail
 
+import android.content.Intent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.mgomanager.app.ui.theme.StatusRed
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailScreen(
     navController: NavController,
@@ -20,98 +28,248 @@ fun DetailScreen(
     viewModel: DetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
 
     LaunchedEffect(accountId) {
         viewModel.loadAccount(accountId)
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(uiState.account?.fullName ?: "Details") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Zurück")
-                    }
+    uiState.account?.let { account ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+        ) {
+            // Blue header section
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.primary)
+                    .padding(16.dp)
+            ) {
+                Column {
+                    // Account name (large, italic style)
+                    Text(
+                        text = account.fullName,
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // User ID
+                    Text(
+                        text = "MoGo User ID: ${account.userId}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Last played
+                    Text(
+                        text = "Zuletzt gespielt:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = account.getFormattedLastPlayedAt(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
                 }
-            )
-        }
-    ) { paddingValues ->
-        uiState.account?.let { account ->
+            }
+
+            // Content area
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(16.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .fillMaxWidth()
+                    .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Section: Allgemeine Informationen
-                Text("Allgemeine Informationen", style = MaterialTheme.typography.titleMedium)
-                DetailInfoItem("Name", account.fullName)
-                DetailInfoItem("Erstellt am", account.getFormattedCreatedAt())
-                DetailInfoItem("Zuletzt gespielt", account.getFormattedLastPlayedAt())
-
-                Divider()
-
-                // Section: IDs
-                Text("IDs", style = MaterialTheme.typography.titleMedium)
-                DetailInfoItem("User ID", account.userId)
-                DetailInfoItem("GAID", account.gaid)
-                DetailInfoItem("Device Token", account.deviceToken)
-                DetailInfoItem("App Set ID", account.appSetId)
-                DetailInfoItem("SSAID", account.ssaid)
-
-                Divider()
-
-                // Section: Status
-                Text("Status", style = MaterialTheme.typography.titleMedium)
-                DetailInfoItem("Sus Level", account.susLevel.displayName)
-                DetailInfoItem("Error", if (account.hasError) "Ja" else "Nein")
-
-                if (account.hasFacebookLink) {
-                    Divider()
-                    Text("Facebook Verbindung", style = MaterialTheme.typography.titleMedium)
-                    DetailInfoItem("Username", account.fbUsername ?: "")
-                    DetailInfoItem("Passwort", account.fbPassword ?: "")
-                    DetailInfoItem("2FA", account.fb2FA ?: "")
-                    DetailInfoItem("Temp-Mail", account.fbTempMail ?: "")
-                }
-
-                Divider()
-
-                // Section: Dateisystem
-                Text("Dateisystem", style = MaterialTheme.typography.titleMedium)
-                DetailInfoItem("Backup-Pfad", account.backupPath)
-                DetailInfoItem("Eigentümer", "${account.fileOwner}:${account.fileGroup}")
-                DetailInfoItem("Berechtigungen", account.filePermissions)
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Action buttons
+                // Action buttons row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Restore button (blue)
                     Button(
                         onClick = { viewModel.showRestoreDialog() },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
                     ) {
-                        Text("RESTORE")
+                        Text(
+                            text = "WIEDERHERS\nTELLEN",
+                            fontSize = 11.sp,
+                            lineHeight = 14.sp,
+                            maxLines = 2
+                        )
                     }
-                    OutlinedButton(
+
+                    // Edit button (gray)
+                    Button(
                         onClick = { viewModel.showEditDialog() },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Gray
+                        )
                     ) {
-                        Text("BEARBEITEN")
+                        Text("EDIT")
                     }
-                    OutlinedButton(
+
+                    // Delete button (red)
+                    Button(
                         onClick = { viewModel.showDeleteDialog() },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = StatusRed
+                        )
                     ) {
                         Text("LÖSCHEN")
                     }
                 }
+
+                // Friendship link card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Text(
+                            text = "FREUNDSCHAFTSLINK",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Text(
+                            text = "Nicht verfügbar",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "FREUNDSCHAFTSCODE",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Text(
+                            text = "---",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+
+                // Status card (Suspension / Error)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Suspension",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                            Text(
+                                text = account.susLevel.displayName,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Error",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                            Text(
+                                text = if (account.hasError) "ja" else "nein",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+
+                // Device IDs card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Text(
+                            text = "Geräte-IDs",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "SSAID",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Text(
+                            text = if (account.ssaid == "nicht vorhanden") "Nicht verfügbar" else account.ssaid,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = FontFamily.Monospace
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "GAID",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Text(
+                            text = if (account.gaid == "nicht vorhanden") "Nicht verfügbar" else account.gaid,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = FontFamily.Monospace
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "DEVICE ID",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Text(
+                            text = if (account.deviceToken == "nicht vorhanden") "Nicht verfügbar" else account.deviceToken,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+
+                // Back to list link
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "← Zurück zur Liste",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .clickable { navController.popBackStack() }
+                        .padding(8.dp)
+                )
             }
         }
     }
@@ -154,16 +312,46 @@ fun DetailScreen(
             }
         )
     }
-}
 
-@Composable
-fun DetailInfoItem(label: String, value: String) {
-    Column {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+    // Restore success dialog with app launch option
+    if (uiState.showRestoreSuccessDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.hideRestoreSuccessDialog() },
+            title = { Text("Wiederherstellung erfolgreich!") },
+            text = { Text("Monopoly Go jetzt starten?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.hideRestoreSuccessDialog()
+                    val launchIntent = context.packageManager.getLaunchIntentForPackage("com.scopely.monopolygo")
+                    if (launchIntent != null) {
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(launchIntent)
+                    }
+                }) {
+                    Text("Ja")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.hideRestoreSuccessDialog() }) {
+                    Text("Nein")
+                }
+            }
         )
-        Text(text = value, style = MaterialTheme.typography.bodyMedium)
+    }
+
+    // Show restore failure dialog
+    uiState.restoreResult?.let { result ->
+        if (result is com.mgomanager.app.data.model.RestoreResult.Failure) {
+            AlertDialog(
+                onDismissRequest = { viewModel.hideRestoreDialog() },
+                title = { Text("Wiederherstellung fehlgeschlagen") },
+                text = { Text(result.error) },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.hideRestoreDialog() }) {
+                        Text("OK")
+                    }
+                }
+            )
+        }
     }
 }
