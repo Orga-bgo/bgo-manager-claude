@@ -42,15 +42,52 @@ class IdExtractor @Inject constructor() {
     }
 
     /**
-     * Extract SSAID from settings_ssaid.xml using regex
-     * Format: com.scopely.monopolygo/<16-char-hex-ssaid>
+     * Extract SSAID from settings_ssaid.xml
+     * The file is in Android Binary XML format (ABX2).
+     * Pattern in binary: /<16-hex-ssaid>/com.scopely.monopolygo/<16-hex-ssaid>
+     * We look for the SSAID that appears before or after the package name.
      */
     fun extractSsaid(xmlFile: File): String {
         return try {
-            val content = xmlFile.readText()
-            val regex = Regex("""com\.scopely\.monopolygo/([a-f0-9]{16})""")
-            val match = regex.find(content)
-            match?.groupValues?.get(1) ?: "nicht vorhanden"
+            // Read file as bytes and convert to string, replacing non-printable chars
+            val bytes = xmlFile.readBytes()
+            val content = bytes.map { byte ->
+                val char = byte.toInt().and(0xFF).toChar()
+                if (char.isLetterOrDigit() || char in "/.:-_") char else ' '
+            }.joinToString("")
+
+            // Try multiple patterns to find the SSAID
+
+            // Pattern 1: SSAID after package name (com.scopely.monopolygo/SSAID)
+            val patternAfter = Regex("""com\.scopely\.monopolygo/([a-f0-9]{16})""")
+            val matchAfter = patternAfter.find(content)
+            if (matchAfter != null) {
+                return matchAfter.groupValues[1]
+            }
+
+            // Pattern 2: SSAID before package name (/SSAID/com.scopely.monopolygo)
+            val patternBefore = Regex("""/([a-f0-9]{16})/com\.scopely\.monopolygo""")
+            val matchBefore = patternBefore.find(content)
+            if (matchBefore != null) {
+                return matchBefore.groupValues[1]
+            }
+
+            // Pattern 3: Just find any 16-hex string near "monopolygo"
+            val indexOfMonopoly = content.indexOf("com.scopely.monopolygo")
+            if (indexOfMonopoly != -1) {
+                // Search in a window around the package name
+                val windowStart = maxOf(0, indexOfMonopoly - 50)
+                val windowEnd = minOf(content.length, indexOfMonopoly + 80)
+                val window = content.substring(windowStart, windowEnd)
+
+                val hexPattern = Regex("""([a-f0-9]{16})""")
+                val hexMatch = hexPattern.find(window)
+                if (hexMatch != null) {
+                    return hexMatch.groupValues[1]
+                }
+            }
+
+            "nicht vorhanden"
         } catch (e: Exception) {
             "nicht vorhanden"
         }
