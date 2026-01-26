@@ -46,16 +46,20 @@ class MainActivity : ComponentActivity() {
                 var isReady by remember { mutableStateOf(false) }
                 var showPermissionDialog by remember { mutableStateOf(false) }
                 var errorMessage by remember { mutableStateOf<String?>(null) }
+                var retryCounter by remember { mutableIntStateOf(0) }
 
                 // SSH server backup check state
                 var showServerBackupDialog by remember { mutableStateOf(false) }
                 var serverBackupDate by remember { mutableStateOf("") }
 
-                LaunchedEffect(Unit) {
-                    // Check prerequisites
+                // Function to check prerequisites
+                suspend fun checkPrerequisites() {
+                    errorMessage = null
+                    isReady = false
+
                     val isRooted = rootUtil.requestRootAccess()
                     val hasPermissions = permissionManager.hasStoragePermissions()
-                    val isMGOInstalled = rootUtil.isMonopolyGoInstalled()
+                    val isMGOInstalled = if (isRooted) rootUtil.isMonopolyGoInstalled() else false
 
                     when {
                         !isRooted -> errorMessage = "Root-Zugriff erforderlich"
@@ -78,6 +82,10 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                }
+
+                LaunchedEffect(retryCounter) {
+                    checkPrerequisites()
                 }
 
                 // Recheck permissions when resuming from settings
@@ -112,12 +120,17 @@ class MainActivity : ComponentActivity() {
                 ) {
                     when {
                         errorMessage != null -> {
-                            // Show error dialog
+                            // Show error dialog with retry option
                             AlertDialog(
-                                onDismissRequest = { finish() },
+                                onDismissRequest = { },
                                 title = { Text("Fehler") },
                                 text = { Text(errorMessage!!) },
                                 confirmButton = {
+                                    TextButton(onClick = { retryCounter++ }) {
+                                        Text("Erneut versuchen")
+                                    }
+                                },
+                                dismissButton = {
                                     TextButton(onClick = { finish() }) {
                                         Text("Schließen")
                                     }
