@@ -29,12 +29,15 @@ data class SettingsUiState(
     val sshPrivateKeyPath: String = "/storage/emulated/0/.ssh/id_ed25519",
     val sshServer: String = "",
     val sshBackupPath: String = "/home/user/monopolygo/backups/",
+    val sshPassword: String = "",
+    val sshAuthMethod: String = "key_only", // key_only, password_only, try_both
     val sshAutoCheckOnStart: Boolean = false,
     val sshAutoUploadOnExport: Boolean = false,
     val sshLastSyncTimestamp: Long = 0L,
     val sshKeyPathSaved: Boolean = false,
     val sshServerSaved: Boolean = false,
     val sshBackupPathSaved: Boolean = false,
+    val sshPasswordSaved: Boolean = false,
     val sshTestResult: String? = null,
     val isSshTesting: Boolean = false
 )
@@ -92,15 +95,29 @@ class SettingsViewModel @Inject constructor(
 
         viewModelScope.launch {
             combine(
-                settingsDataStore.sshAutoCheckOnStart,
-                settingsDataStore.sshAutoUploadOnExport,
+                settingsDataStore.sshPassword,
+                settingsDataStore.sshAuthMethod,
                 settingsDataStore.sshLastSyncTimestamp
-            ) { autoCheck, autoUpload, lastSync ->
+            ) { password, authMethod, lastSync ->
+                _uiState.update {
+                    it.copy(
+                        sshPassword = password,
+                        sshAuthMethod = authMethod,
+                        sshLastSyncTimestamp = lastSync
+                    )
+                }
+            }.collect { }
+        }
+
+        viewModelScope.launch {
+            combine(
+                settingsDataStore.sshAutoCheckOnStart,
+                settingsDataStore.sshAutoUploadOnExport
+            ) { autoCheck, autoUpload ->
                 _uiState.update {
                     it.copy(
                         sshAutoCheckOnStart = autoCheck,
-                        sshAutoUploadOnExport = autoUpload,
-                        sshLastSyncTimestamp = lastSync
+                        sshAutoUploadOnExport = autoUpload
                     )
                 }
             }.collect { }
@@ -209,6 +226,23 @@ class SettingsViewModel @Inject constructor(
 
     fun resetSshBackupPathSaved() {
         _uiState.update { it.copy(sshBackupPathSaved = false) }
+    }
+
+    fun updateSshPassword(password: String) {
+        viewModelScope.launch {
+            settingsDataStore.setSshPassword(password)
+            _uiState.update { it.copy(sshPasswordSaved = true) }
+        }
+    }
+
+    fun resetSshPasswordSaved() {
+        _uiState.update { it.copy(sshPasswordSaved = false) }
+    }
+
+    fun updateSshAuthMethod(method: String) {
+        viewModelScope.launch {
+            settingsDataStore.setSshAuthMethod(method)
+        }
     }
 
     fun updateSshAutoCheckOnStart(enabled: Boolean) {

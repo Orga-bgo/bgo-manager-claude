@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
+import net.schmizz.sshj.userauth.UserAuthException
 import net.schmizz.sshj.userauth.keyprovider.KeyProvider
 import timber.log.Timber
 import java.io.File
@@ -59,6 +60,11 @@ class SSHSyncService @Inject constructor(
         private const val TAG = "SSHSyncService"
         private const val CONNECTION_TIMEOUT_MS = 30000
         private const val READ_TIMEOUT_MS = 60000
+
+        // Authentication methods
+        const val AUTH_KEY_ONLY = "key_only"
+        const val AUTH_PASSWORD_ONLY = "password_only"
+        const val AUTH_TRY_BOTH = "try_both"
     }
 
     /**
@@ -104,6 +110,81 @@ class SSHSyncService @Inject constructor(
     }
 
     /**
+     * Authenticate SSH client based on configured auth method
+     * @return true if authentication successful, throws exception otherwise
+     */
+    private suspend fun authenticateSSH(
+        ssh: SSHClient,
+        username: String,
+        keyPath: String,
+        password: String,
+        authMethod: String
+    ): String {
+        val keyFile = File(keyPath)
+        val hasKey = keyFile.exists()
+        val hasPassword = password.isNotBlank()
+
+        var lastError: Exception? = null
+        var usedMethod = ""
+
+        // Try key authentication
+        if ((authMethod == AUTH_KEY_ONLY || authMethod == AUTH_TRY_BOTH) && hasKey) {
+            try {
+                Timber.d("Attempting key authentication...")
+                val keyProvider: KeyProvider = ssh.loadKeys(keyPath)
+                ssh.authPublickey(username, keyProvider)
+                usedMethod = "Key"
+                Timber.d("Key authentication successful")
+                return usedMethod
+            } catch (e: UserAuthException) {
+                Timber.w(e, "Key authentication failed")
+                lastError = e
+                if (authMethod == AUTH_KEY_ONLY) {
+                    throw Exception("Key-Authentifizierung fehlgeschlagen: ${e.message}", e)
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "Key authentication error")
+                lastError = e
+                if (authMethod == AUTH_KEY_ONLY) {
+                    throw Exception("Key-Fehler: ${e.message}", e)
+                }
+            }
+        }
+
+        // Try password authentication
+        if ((authMethod == AUTH_PASSWORD_ONLY || authMethod == AUTH_TRY_BOTH) && hasPassword) {
+            try {
+                Timber.d("Attempting password authentication...")
+                ssh.authPassword(username, password)
+                usedMethod = "Passwort"
+                Timber.d("Password authentication successful")
+                return usedMethod
+            } catch (e: UserAuthException) {
+                Timber.w(e, "Password authentication failed")
+                lastError = e
+                if (authMethod == AUTH_PASSWORD_ONLY) {
+                    throw Exception("Passwort-Authentifizierung fehlgeschlagen: ${e.message}", e)
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "Password authentication error")
+                lastError = e
+                if (authMethod == AUTH_PASSWORD_ONLY) {
+                    throw Exception("Passwort-Fehler: ${e.message}", e)
+                }
+            }
+        }
+
+        // If we get here, all methods failed
+        val errorMsg = when {
+            authMethod == AUTH_KEY_ONLY && !hasKey -> "Private Key nicht gefunden: $keyPath"
+            authMethod == AUTH_PASSWORD_ONLY && !hasPassword -> "Kein Passwort konfiguriert"
+            authMethod == AUTH_TRY_BOTH && !hasKey && !hasPassword -> "Weder Key noch Passwort konfiguriert"
+            else -> "Authentifizierung fehlgeschlagen: ${lastError?.message ?: "Unbekannter Fehler"}"
+        }
+        throw Exception(errorMsg, lastError)
+    }
+
+    /**
      * Test SSH connection with current settings
      * @return SSHOperationResult with connection test result
      */
@@ -115,6 +196,8 @@ class SSHSyncService @Inject constructor(
 
         val serverString = settingsDataStore.sshServer.first()
         val keyPath = settingsDataStore.sshPrivateKeyPath.first()
+        val password = settingsDataStore.sshPassword.first()
+        val authMethod = settingsDataStore.sshAuthMethod.first()
         val remotePath = settingsDataStore.sshBackupPath.first()
 
         // Validate settings
@@ -123,9 +206,18 @@ class SSHSyncService @Inject constructor(
             return@withContext SSHOperationResult.Error("Ungültiges Server-Format. Verwende: user@host:port")
         }
 
+        // Validate auth requirements
         val keyFile = File(keyPath)
-        if (!keyFile.exists()) {
-            return@withContext SSHOperationResult.Error("Private Key nicht gefunden: $keyPath")
+        when (authMethod) {
+            AUTH_KEY_ONLY -> if (!keyFile.exists()) {
+                return@withContext SSHOperationResult.Error("Private Key nicht gefunden: $keyPath")
+            }
+            AUTH_PASSWORD_ONLY -> if (password.isBlank()) {
+                return@withContext SSHOperationResult.Error("Kein Passwort konfiguriert")
+            }
+            AUTH_TRY_BOTH -> if (!keyFile.exists() && password.isBlank()) {
+                return@withContext SSHOperationResult.Error("Weder Key noch Passwort konfiguriert")
+            }
         }
 
         var ssh: SSHClient? = null
@@ -139,9 +231,8 @@ class SSHSyncService @Inject constructor(
 
             ssh.connect(connectionInfo.host, connectionInfo.port)
 
-            // Authenticate with private key
-            val keyProvider: KeyProvider = ssh.loadKeys(keyPath)
-            ssh.authPublickey(connectionInfo.username, keyProvider)
+            // Authenticate using configured method
+            val usedMethod = authenticateSSH(ssh, connectionInfo.username, keyPath, password, authMethod)
 
             // Test SFTP access
             val sftp = ssh.newSFTPClient()
@@ -157,8 +248,8 @@ class SSHSyncService @Inject constructor(
                 val files = sftp.ls(remotePath)
                 val zipCount = files.count { it.name.endsWith(".zip") }
 
-                logRepository.logInfo(TAG, "SSH connection successful. Found $zipCount ZIP files.")
-                SSHOperationResult.Success("Verbindung erfolgreich! $zipCount ZIP-Dateien gefunden.")
+                logRepository.logInfo(TAG, "SSH connection successful via $usedMethod. Found $zipCount ZIP files.")
+                SSHOperationResult.Success("Verbindung erfolgreich ($usedMethod)! $zipCount ZIP-Dateien gefunden.")
             } finally {
                 sftp.close()
             }
@@ -187,6 +278,8 @@ class SSHSyncService @Inject constructor(
 
         val serverString = settingsDataStore.sshServer.first()
         val keyPath = settingsDataStore.sshPrivateKeyPath.first()
+        val password = settingsDataStore.sshPassword.first()
+        val authMethod = settingsDataStore.sshAuthMethod.first()
         val remotePath = settingsDataStore.sshBackupPath.first()
 
         // Validate settings
@@ -199,9 +292,10 @@ class SSHSyncService @Inject constructor(
             return@withContext ServerBackupCheckResult.Error("Ungültiges Server-Format")
         }
 
+        // Check if we have any authentication configured
         val keyFile = File(keyPath)
-        if (!keyFile.exists()) {
-            return@withContext ServerBackupCheckResult.NotConfigured("Private Key nicht gefunden")
+        if (!keyFile.exists() && password.isBlank()) {
+            return@withContext ServerBackupCheckResult.NotConfigured("Keine Authentifizierung konfiguriert")
         }
 
         var ssh: SSHClient? = null
@@ -213,8 +307,7 @@ class SSHSyncService @Inject constructor(
 
             ssh.connect(connectionInfo.host, connectionInfo.port)
 
-            val keyProvider: KeyProvider = ssh.loadKeys(keyPath)
-            ssh.authPublickey(connectionInfo.username, keyProvider)
+            authenticateSSH(ssh, connectionInfo.username, keyPath, password, authMethod)
 
             val sftp = ssh.newSFTPClient()
             try {
@@ -262,6 +355,8 @@ class SSHSyncService @Inject constructor(
 
         val serverString = settingsDataStore.sshServer.first()
         val keyPath = settingsDataStore.sshPrivateKeyPath.first()
+        val password = settingsDataStore.sshPassword.first()
+        val authMethod = settingsDataStore.sshAuthMethod.first()
         val remotePath = settingsDataStore.sshBackupPath.first()
 
         // Validate settings
@@ -270,9 +365,10 @@ class SSHSyncService @Inject constructor(
             return@withContext SSHOperationResult.Error("SSH-Server nicht konfiguriert")
         }
 
+        // Check if we have any authentication configured
         val keyFile = File(keyPath)
-        if (!keyFile.exists()) {
-            return@withContext SSHOperationResult.Error("Private Key nicht gefunden: $keyPath")
+        if (!keyFile.exists() && password.isBlank()) {
+            return@withContext SSHOperationResult.Error("Keine Authentifizierung konfiguriert")
         }
 
         val localFile = File(localZipPath)
@@ -291,8 +387,7 @@ class SSHSyncService @Inject constructor(
 
             ssh.connect(connectionInfo.host, connectionInfo.port)
 
-            val keyProvider: KeyProvider = ssh.loadKeys(keyPath)
-            ssh.authPublickey(connectionInfo.username, keyProvider)
+            authenticateSSH(ssh, connectionInfo.username, keyPath, password, authMethod)
 
             val sftp = ssh.newSFTPClient()
             try {
@@ -339,6 +434,8 @@ class SSHSyncService @Inject constructor(
 
         val serverString = settingsDataStore.sshServer.first()
         val keyPath = settingsDataStore.sshPrivateKeyPath.first()
+        val password = settingsDataStore.sshPassword.first()
+        val authMethod = settingsDataStore.sshAuthMethod.first()
         val remotePath = settingsDataStore.sshBackupPath.first()
 
         // Validate settings
@@ -347,9 +444,10 @@ class SSHSyncService @Inject constructor(
             return@withContext SSHOperationResult.Error("SSH-Server nicht konfiguriert")
         }
 
+        // Check if we have any authentication configured
         val keyFile = File(keyPath)
-        if (!keyFile.exists()) {
-            return@withContext SSHOperationResult.Error("Private Key nicht gefunden: $keyPath")
+        if (!keyFile.exists() && password.isBlank()) {
+            return@withContext SSHOperationResult.Error("Keine Authentifizierung konfiguriert")
         }
 
         var ssh: SSHClient? = null
@@ -363,8 +461,7 @@ class SSHSyncService @Inject constructor(
 
             ssh.connect(connectionInfo.host, connectionInfo.port)
 
-            val keyProvider: KeyProvider = ssh.loadKeys(keyPath)
-            ssh.authPublickey(connectionInfo.username, keyProvider)
+            authenticateSSH(ssh, connectionInfo.username, keyPath, password, authMethod)
 
             val sftp = ssh.newSFTPClient()
             try {

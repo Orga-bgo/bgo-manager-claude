@@ -8,7 +8,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +37,8 @@ fun SettingsScreen(
     var sshKeyPathInput by remember { mutableStateOf("") }
     var sshServerInput by remember { mutableStateOf("") }
     var sshBackupPathInput by remember { mutableStateOf("") }
+    var sshPasswordInput by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState) {
         prefixInput = uiState.accountPrefix
@@ -40,6 +46,7 @@ fun SettingsScreen(
         sshKeyPathInput = uiState.sshPrivateKeyPath
         sshServerInput = uiState.sshServer
         sshBackupPathInput = uiState.sshBackupPath
+        sshPasswordInput = uiState.sshPassword
     }
 
     // Refresh root status when screen is loaded
@@ -263,6 +270,75 @@ fun SettingsScreen(
                             }
                         }
                     )
+
+                    // Password field
+                    OutlinedTextField(
+                        value = sshPasswordInput,
+                        onValueChange = {
+                            sshPasswordInput = it
+                            viewModel.resetSshPasswordSaved()
+                        },
+                        label = { Text("Passwort (optional)") },
+                        placeholder = { Text("SSH-Passwort") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            Row {
+                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                    Icon(
+                                        if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = if (passwordVisible) "Passwort verbergen" else "Passwort anzeigen"
+                                    )
+                                }
+                                IconButton(onClick = { viewModel.updateSshPassword(sshPasswordInput) }) {
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = "Speichern",
+                                        tint = if (uiState.sshPasswordSaved) StatusGreen else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    )
+
+                    // Authentication method selector
+                    Text(
+                        text = "Authentifizierung",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = uiState.sshAuthMethod == "key_only",
+                            onClick = { viewModel.updateSshAuthMethod("key_only") }
+                        )
+                        Text(
+                            text = "Nur Key",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        RadioButton(
+                            selected = uiState.sshAuthMethod == "password_only",
+                            onClick = { viewModel.updateSshAuthMethod("password_only") }
+                        )
+                        Text(
+                            text = "Nur Passwort",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        RadioButton(
+                            selected = uiState.sshAuthMethod == "try_both",
+                            onClick = { viewModel.updateSshAuthMethod("try_both") }
+                        )
+                        Text(
+                            text = "Beides",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
 
                     // Auto-sync checkboxes
                     Row(

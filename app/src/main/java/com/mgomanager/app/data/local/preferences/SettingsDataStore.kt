@@ -36,6 +36,8 @@ class SettingsDataStore @Inject constructor(
         private val SSH_PRIVATE_KEY_PATH = stringPreferencesKey("ssh_private_key_path")
         private val SSH_SERVER = stringPreferencesKey("ssh_server")
         private val SSH_BACKUP_PATH = stringPreferencesKey("ssh_backup_path")
+        private val SSH_PASSWORD = stringPreferencesKey("ssh_password")
+        private val SSH_AUTH_METHOD = stringPreferencesKey("ssh_auth_method")
         private val SSH_AUTO_CHECK_ON_START = booleanPreferencesKey("ssh_auto_check_on_start")
         private val SSH_AUTO_UPLOAD_ON_EXPORT = booleanPreferencesKey("ssh_auto_upload_on_export")
         private val SSH_LAST_SYNC_TIMESTAMP = longPreferencesKey("ssh_last_sync_timestamp")
@@ -48,6 +50,7 @@ class SettingsDataStore @Inject constructor(
         const val DEFAULT_SSH_KEY_PATH = "/storage/emulated/0/.ssh/id_ed25519"
         const val DEFAULT_SSH_BACKUP_PATH = "/home/user/monopolygo/backups/"
         const val DEFAULT_SORT_MODE = "lastPlayed"
+        const val DEFAULT_SSH_AUTH_METHOD = "key_only" // key_only, password_only, try_both
     }
 
     /**
@@ -166,6 +169,38 @@ class SettingsDataStore @Inject constructor(
     suspend fun setSshBackupPath(path: String) {
         context.dataStore.edit { preferences ->
             preferences[SSH_BACKUP_PATH] = path
+        }
+    }
+
+    /**
+     * Get SSH password (stored securely)
+     */
+    val sshPassword: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[SSH_PASSWORD] ?: ""
+    }
+
+    /**
+     * Set SSH password
+     */
+    suspend fun setSshPassword(password: String) {
+        context.dataStore.edit { preferences ->
+            preferences[SSH_PASSWORD] = password
+        }
+    }
+
+    /**
+     * Get SSH authentication method (key_only, password_only, try_both)
+     */
+    val sshAuthMethod: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[SSH_AUTH_METHOD] ?: DEFAULT_SSH_AUTH_METHOD
+    }
+
+    /**
+     * Set SSH authentication method
+     */
+    suspend fun setSshAuthMethod(method: String) {
+        context.dataStore.edit { preferences ->
+            preferences[SSH_AUTH_METHOD] = method
         }
     }
 
