@@ -22,6 +22,10 @@ class RestoreBackupUseCase @Inject constructor(
         const val MGO_FILES_PATH = "$MGO_DATA_PATH/files"
         const val MGO_PREFS_PATH = "$MGO_DATA_PATH/shared_prefs"
         const val SSAID_PATH = "/data/system/users/0/settings_ssaid.xml"
+
+        // MGO Manager database paths for Xposed hook access
+        const val MGO_MANAGER_DB_DIR = "/data/data/com.mgomanager.app/databases"
+        const val MGO_MANAGER_DB_PATH = "$MGO_MANAGER_DB_DIR/mgo_manager.db"
     }
 
     suspend fun execute(accountId: Long): RestoreResult = withContext(Dispatchers.IO) {
@@ -82,6 +86,11 @@ class RestoreBackupUseCase @Inject constructor(
 
             // Step 8: Mark account as last restored for Xposed hook
             accountRepository.markAsLastRestored(accountId)
+
+            // Step 9: Make database world-readable for Xposed hook access
+            // The hook runs in Monopoly GO's process and needs to read our database
+            makeDatabaseWorldReadable()
+
             logRepository.logInfo(
                 "RESTORE",
                 "Account als zuletzt wiederhergestellt markiert. Xposed Hook nutzt App Set ID: ${account.appSetId}",
@@ -112,6 +121,26 @@ class RestoreBackupUseCase @Inject constructor(
             val errorMsg = result.exceptionOrNull()?.message ?: "Unknown error"
             logRepository.logError("RESTORE", "Fehler beim Wiederherstellen: $source - $errorMsg", accountName)
             throw Exception("Verzeichnis konnte nicht wiederhergestellt werden: $source - $errorMsg")
+        }
+    }
+
+    /**
+     * Make the MGO Manager database world-readable so the Xposed hook
+     * (running in Monopoly GO's process) can access it.
+     */
+    private suspend fun makeDatabaseWorldReadable() {
+        try {
+            // Set directory permissions to 755 (rwxr-xr-x)
+            rootUtil.executeCommand("chmod 755 $MGO_MANAGER_DB_DIR")
+            // Set database file permissions to 644 (rw-r--r--)
+            rootUtil.executeCommand("chmod 644 $MGO_MANAGER_DB_PATH")
+            // Also handle WAL and SHM files if they exist
+            rootUtil.executeCommand("chmod 644 $MGO_MANAGER_DB_PATH-wal 2>/dev/null || true")
+            rootUtil.executeCommand("chmod 644 $MGO_MANAGER_DB_PATH-shm 2>/dev/null || true")
+            logRepository.logInfo("RESTORE", "Datenbank-Berechtigungen für Xposed Hook gesetzt")
+        } catch (e: Exception) {
+            // Log but don't fail the restore - the hook might still work
+            logRepository.logWarning("RESTORE", "Konnte Datenbank-Berechtigungen nicht setzen: ${e.message}")
         }
     }
 }
