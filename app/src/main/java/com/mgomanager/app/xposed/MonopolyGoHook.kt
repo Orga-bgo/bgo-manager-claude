@@ -36,8 +36,11 @@ class MonopolyGoHook : IXposedHookLoadPackage {
     }
 
     /**
-     * Hook Settings.Secure.getString() to replace android_id with our App Set ID.
-     * Some apps use this as a fallback or alternative identifier.
+     * Hook Settings.Secure.getString() to replace android_id with stored SSAID.
+     *
+     * Two modes:
+     * 1. CAPTURE MODE: Write original android_id to file (for backup fallback when settings_ssaid.xml is missing)
+     * 2. NORMAL MODE: Return stored SSAID for the last restored account
      */
     private fun hookSettingsSecure(lpparam: LoadPackageParam) {
         try {
@@ -57,18 +60,30 @@ class MonopolyGoHook : IXposedHookLoadPackage {
 
                         // Only intercept android_id requests
                         if (name == "android_id") {
+                            val original = param.result as? String
+
+                            // Check for capture mode (MGO Manager is creating a backup and needs the original ID)
+                            if (AppSetIdProvider.isCaptureMode()) {
+                                if (original != null) {
+                                    AppSetIdProvider.writeCapturedSsaid(original)
+                                    HookLogger.log("CAPTURE MODE: Wrote original Android ID to file: $original")
+                                }
+                                // Don't replace the result in capture mode - let the original through
+                                return
+                            }
+
+                            // Normal mode: Replace android_id with stored SSAID
                             val context = AndroidAppHelper.currentApplication()
                             if (context == null) {
                                 HookLogger.log("Context not available yet, skipping hook")
                                 return
                             }
 
-                            val appSetId = AppSetIdProvider.getAppSetId(context)
+                            val ssaid = AppSetIdProvider.getSsaid(context)
 
-                            if (appSetId != null && appSetId != "nicht vorhanden") {
-                                val original = param.result as? String
-                                param.result = appSetId
-                                HookLogger.log("Hooked Settings.Secure.getString(android_id): Original=$original, Replaced=$appSetId")
+                            if (ssaid != null) {
+                                param.result = ssaid
+                                HookLogger.log("Hooked android_id: Original=$original, Replaced=$ssaid")
                             }
                         }
                     }

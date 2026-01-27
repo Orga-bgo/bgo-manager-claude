@@ -86,9 +86,9 @@ class RestoreBackupUseCase @Inject constructor(
             // Step 8: Mark account as last restored for Xposed hook
             accountRepository.markAsLastRestored(accountId)
 
-            // Step 9: Write App Set ID to shared file for Xposed hook access
+            // Step 9: Write App Set ID and SSAID to shared file for Xposed hook access
             // The hook runs in Monopoly GO's process and reads from /data/local/tmp/
-            writeSharedAppSetIdFile(account.appSetId, account.fullName)
+            writeSharedHookFile(account.appSetId, account.ssaid, account.fullName)
 
             logRepository.logInfo(
                 "RESTORE",
@@ -124,15 +124,19 @@ class RestoreBackupUseCase @Inject constructor(
     }
 
     /**
-     * Write the App Set ID to a shared file that the Xposed hook can read.
+     * Write App Set ID and SSAID to a shared file that the Xposed hook can read.
      * Uses /data/local/tmp/ which is world-readable and avoids SQLite WAL issues.
      *
-     * Format: appSetId|accountName|timestamp
+     * Format: appSetId|ssaid|accountName|timestamp
+     *
+     * The hook uses:
+     * - appSetId for App Set ID replacement
+     * - ssaid for Android ID (Settings.Secure.getString) replacement
      */
-    private suspend fun writeSharedAppSetIdFile(appSetId: String, accountName: String) {
+    private suspend fun writeSharedHookFile(appSetId: String, ssaid: String, accountName: String) {
         try {
             val timestamp = System.currentTimeMillis()
-            val content = "$appSetId|$accountName|$timestamp"
+            val content = "$appSetId|$ssaid|$accountName|$timestamp"
 
             // Write file using root (echo with heredoc to handle special characters)
             rootUtil.executeCommand("echo '$content' > $XPOSED_SHARED_FILE")
@@ -142,10 +146,10 @@ class RestoreBackupUseCase @Inject constructor(
 
             logRepository.logInfo(
                 "RESTORE",
-                "Xposed shared file geschrieben: $XPOSED_SHARED_FILE"
+                "Xposed shared file geschrieben (AppSetId: $appSetId, SSAID: $ssaid)"
             )
         } catch (e: Exception) {
-            // Log but don't fail the restore - Settings.Secure hook is the primary method
+            // Log but don't fail the restore - hook might still work with cached values
             logRepository.logWarning(
                 "RESTORE",
                 "Konnte Xposed shared file nicht schreiben: ${e.message}"

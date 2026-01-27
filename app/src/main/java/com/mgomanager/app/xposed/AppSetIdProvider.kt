@@ -4,85 +4,124 @@ import android.content.Context
 import java.io.File
 
 /**
- * Provider for the App Set ID from MGO Manager.
+ * Provider for App Set ID and SSAID from MGO Manager.
  * Reads from a shared file in /data/local/tmp/ which is world-readable.
  *
- * This approach avoids SQLite WAL mode issues that prevent cross-process
- * database access without write permissions.
+ * File format: appSetId|ssaid|accountName|timestamp
+ *
+ * Also supports SSAID capture mode for backup fallback when settings_ssaid.xml is missing.
  */
 object AppSetIdProvider {
     // Shared file written by MGO Manager after restore
     private const val SHARED_FILE_PATH = "/data/local/tmp/mgo_current_appsetid.txt"
+
+    // Capture file - written by hook when in capture mode, read by MGO Manager during backup
+    private const val CAPTURE_FILE_PATH = "/data/local/tmp/mgo_captured_ssaid.txt"
+
+    // Capture mode flag file - if exists, hook writes original android_id to capture file
+    private const val CAPTURE_MODE_FLAG = "/data/local/tmp/mgo_capture_mode"
+
     private const val CACHE_DURATION_MS = 5000L // 5 seconds cache
 
     private var cachedAppSetId: String? = null
+    private var cachedSsaid: String? = null
     private var cachedAccountName: String? = null
     private var lastCacheTime: Long = 0
 
     /**
-     * Get the App Set ID of the last restored account from shared file.
-     *
-     * File format: appSetId|accountName|timestamp
-     *
-     * @param context The current application context (unused but kept for API compatibility)
-     * @return The App Set ID string or null if no account was restored or file not accessible
+     * Check if capture mode is active (MGO Manager wants to capture the original Android ID).
      */
-    fun getAppSetId(context: Context?): String? {
-        // Check cache first
+    fun isCaptureMode(): Boolean {
+        return File(CAPTURE_MODE_FLAG).exists()
+    }
+
+    /**
+     * Write captured Android ID to the capture file.
+     * Called by hook when in capture mode.
+     */
+    fun writeCapturedSsaid(androidId: String) {
+        try {
+            val file = File(CAPTURE_FILE_PATH)
+            file.writeText("$androidId|${System.currentTimeMillis()}")
+            HookLogger.log("✓ Captured Android ID: $androidId")
+        } catch (e: Exception) {
+            HookLogger.logError("Failed to write captured SSAID", e)
+        }
+    }
+
+    /**
+     * Refresh cache by re-reading the shared file.
+     */
+    private fun refreshCache(): Boolean {
         val currentTime = System.currentTimeMillis()
         if (cachedAppSetId != null && (currentTime - lastCacheTime) < CACHE_DURATION_MS) {
-            return cachedAppSetId
+            return true
         }
 
         return try {
             val file = File(SHARED_FILE_PATH)
 
-            // Check if file exists and is readable
-            if (!file.exists()) {
-                HookLogger.log("Shared file not found: $SHARED_FILE_PATH")
-                return null
+            if (!file.exists() || !file.canRead()) {
+                HookLogger.log("Shared file not accessible: $SHARED_FILE_PATH")
+                return false
             }
 
-            if (!file.canRead()) {
-                HookLogger.log("Shared file not readable: $SHARED_FILE_PATH")
-                return null
-            }
-
-            // Read and parse file content
             val content = file.readText().trim()
             if (content.isEmpty()) {
                 HookLogger.log("Shared file is empty")
-                return null
+                return false
             }
 
-            // Parse format: appSetId|accountName|timestamp
+            // Parse format: appSetId|ssaid|accountName|timestamp
             val parts = content.split("|")
-            if (parts.size < 2) {
+            if (parts.size < 3) {
+                // Fallback for old format: appSetId|accountName|timestamp
+                if (parts.size >= 2) {
+                    cachedAppSetId = parts[0].takeIf { it.isNotBlank() && it != "nicht vorhanden" }
+                    cachedSsaid = null
+                    cachedAccountName = parts[1]
+                    lastCacheTime = currentTime
+                    HookLogger.log("✓ Loaded (old format) AppSetId: ${cachedAppSetId}")
+                    return cachedAppSetId != null
+                }
                 HookLogger.log("Invalid shared file format: $content")
-                return null
+                return false
             }
 
             val appSetId = parts[0]
-            val accountName = parts[1]
+            val ssaid = parts[1]
+            val accountName = parts[2]
 
-            // Validate App Set ID format (UUID-like)
-            if (appSetId.isBlank() || appSetId == "nicht vorhanden") {
-                HookLogger.log("Invalid App Set ID in shared file: $appSetId")
-                return null
-            }
-
-            // Update cache
-            cachedAppSetId = appSetId
+            // Validate and cache
+            cachedAppSetId = appSetId.takeIf { it.isNotBlank() && it != "nicht vorhanden" }
+            cachedSsaid = ssaid.takeIf { it.isNotBlank() && it != "nicht vorhanden" }
             cachedAccountName = accountName
             lastCacheTime = currentTime
 
-            HookLogger.log("✓ Loaded App Set ID: $appSetId (Account: $accountName)")
-            appSetId
+            HookLogger.log("✓ Loaded AppSetId: $cachedAppSetId, SSAID: $cachedSsaid (Account: $accountName)")
+            true
 
         } catch (e: Exception) {
-            HookLogger.logError("Failed to read App Set ID from shared file", e)
-            null
+            HookLogger.logError("Failed to read shared file", e)
+            false
         }
+    }
+
+    /**
+     * Get the App Set ID of the last restored account.
+     */
+    fun getAppSetId(context: Context?): String? {
+        refreshCache()
+        return cachedAppSetId
+    }
+
+    /**
+     * Get the SSAID (Android ID) of the last restored account.
+     * This is returned for Settings.Secure.getString("android_id") calls.
+     */
+    fun getSsaid(context: Context?): String? {
+        refreshCache()
+        return cachedSsaid
     }
 
     /**
@@ -90,8 +129,9 @@ object AppSetIdProvider {
      */
     fun invalidateCache() {
         cachedAppSetId = null
+        cachedSsaid = null
         cachedAccountName = null
         lastCacheTime = 0
-        HookLogger.log("App Set ID cache invalidated")
+        HookLogger.log("Cache invalidated")
     }
 }
