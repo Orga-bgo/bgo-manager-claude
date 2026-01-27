@@ -46,8 +46,12 @@ abstract class AppDatabase : RoomDatabase() {
          */
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
+                // Use applicationContext if available, otherwise use context directly
+                // This handles early initialization where applicationContext may be null
+                val appContext = context.applicationContext ?: context
+
                 val instance = Room.databaseBuilder(
-                    context.applicationContext,
+                    appContext,
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )

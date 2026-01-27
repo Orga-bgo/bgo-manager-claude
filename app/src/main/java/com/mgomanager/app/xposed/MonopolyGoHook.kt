@@ -2,6 +2,7 @@ package com.mgomanager.app.xposed
 
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
 
@@ -57,6 +58,11 @@ class MonopolyGoHook : IXposedHookLoadPackage {
                         // Only intercept android_id requests
                         if (name == "android_id") {
                             val context = AndroidAppHelper.currentApplication()
+                            if (context == null) {
+                                HookLogger.log("Context not available yet, skipping hook")
+                                return
+                            }
+
                             val appSetId = AppSetIdProvider.getAppSetId(context)
 
                             if (appSetId != null && appSetId != "nicht vorhanden") {
@@ -78,45 +84,71 @@ class MonopolyGoHook : IXposedHookLoadPackage {
     /**
      * Hook AppSetIdClient.getAppSetIdInfo() to return our custom App Set ID.
      * This is the primary method Google Play Services uses for App Set ID.
+     *
+     * Note: AppSetIdClient is an interface, so we need to hook all implementations
+     * using XposedBridge.hookAllMethods.
      */
     private fun hookAppSetIdClient(lpparam: LoadPackageParam) {
         try {
-            val appSetIdClientClass = XposedHelpers.findClass(
-                "com.google.android.gms.appset.AppSetIdClient",
-                lpparam.classLoader
+            // Try to find the implementation class (varies by GMS version)
+            val implClassNames = listOf(
+                "com.google.android.gms.appset.internal.zzc",
+                "com.google.android.gms.appset.internal.zzd",
+                "com.google.android.gms.appset.AppSetIdClientImpl"
             )
 
-            XposedHelpers.findAndHookMethod(
-                appSetIdClientClass,
-                "getAppSetIdInfo",
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        val context = AndroidAppHelper.currentApplication()
-                        val appSetId = AppSetIdProvider.getAppSetId(context)
+            var hooked = false
+            for (className in implClassNames) {
+                try {
+                    val implClass = XposedHelpers.findClass(className, lpparam.classLoader)
 
-                        if (appSetId != null && appSetId != "nicht vorhanden") {
-                            try {
-                                // Create a fake AppSetIdInfo with our custom ID
-                                val fakeAppSetIdInfo = createFakeAppSetIdInfo(appSetId, lpparam)
-
-                                if (fakeAppSetIdInfo != null) {
-                                    // Wrap in a completed Task
-                                    val completedTask = createCompletedTask(fakeAppSetIdInfo, lpparam)
-                                    param.result = completedTask
-                                    HookLogger.log("Hooked AppSetIdClient.getAppSetIdInfo: Replaced with $appSetId")
+                    val hooks = XposedBridge.hookAllMethods(
+                        implClass,
+                        "getAppSetIdInfo",
+                        object : XC_MethodHook() {
+                            override fun afterHookedMethod(param: MethodHookParam) {
+                                val context = AndroidAppHelper.currentApplication()
+                                if (context == null) {
+                                    HookLogger.log("Context not available yet for AppSetIdClient hook")
+                                    return
                                 }
-                            } catch (e: Exception) {
-                                HookLogger.logError("Failed to create fake AppSetIdInfo", e)
+
+                                val appSetId = AppSetIdProvider.getAppSetId(context)
+
+                                if (appSetId != null && appSetId != "nicht vorhanden") {
+                                    try {
+                                        // Create a fake AppSetIdInfo with our custom ID
+                                        val fakeAppSetIdInfo = createFakeAppSetIdInfo(appSetId, lpparam)
+
+                                        if (fakeAppSetIdInfo != null) {
+                                            // Wrap in a completed Task
+                                            val completedTask = createCompletedTask(fakeAppSetIdInfo, lpparam)
+                                            param.result = completedTask
+                                            HookLogger.log("Hooked AppSetIdClient.getAppSetIdInfo: Replaced with $appSetId")
+                                        }
+                                    } catch (e: Exception) {
+                                        HookLogger.logError("Failed to create fake AppSetIdInfo", e)
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-            )
+                    )
 
-            HookLogger.log("AppSetIdClient.getAppSetIdInfo hooked")
+                    if (hooks.isNotEmpty()) {
+                        HookLogger.log("AppSetIdClient implementation hooked via $className (${hooks.size} methods)")
+                        hooked = true
+                        break
+                    }
+                } catch (e: Throwable) {
+                    // Class not found, try next
+                }
+            }
+
+            if (!hooked) {
+                HookLogger.log("AppSetIdClient implementation not found - App Set ID hook not available")
+            }
         } catch (e: Throwable) {
-            // Google Play Services classes may not be available
-            HookLogger.log("AppSetIdClient not found (Google Play Services may not be available): ${e.message}")
+            HookLogger.log("Failed to hook AppSetIdClient: ${e.message}")
         }
     }
 

@@ -18,9 +18,14 @@ object AppSetIdProvider {
      * Get the App Set ID of the last restored account from MGO Manager database.
      *
      * @param context The current application context (from Monopoly GO process)
-     * @return The App Set ID string or null if no account was restored
+     * @return The App Set ID string or null if no account was restored or context unavailable
      */
-    fun getAppSetId(context: Context): String? {
+    fun getAppSetId(context: Context?): String? {
+        if (context == null) {
+            HookLogger.log("Context is null, cannot read App Set ID")
+            return null
+        }
+
         // Check cache first
         val currentTime = System.currentTimeMillis()
         if (cachedAppSetId != null && (currentTime - lastCacheTime) < CACHE_DURATION_MS) {
@@ -35,7 +40,7 @@ object AppSetIdProvider {
                 Context.CONTEXT_INCLUDE_CODE or Context.CONTEXT_IGNORE_SECURITY
             )
 
-            // Get database instance
+            // Get database instance (use mgoContext directly, not applicationContext)
             val database = AppDatabase.getInstance(mgoContext)
 
             // Query for last restored account (synchronous call)
