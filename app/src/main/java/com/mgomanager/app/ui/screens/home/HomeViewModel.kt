@@ -10,6 +10,7 @@ import com.mgomanager.app.data.repository.AccountRepository
 import com.mgomanager.app.data.repository.BackupRepository
 import com.mgomanager.app.domain.usecase.BackupRequest
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -26,6 +27,8 @@ data class HomeUiState(
     val showRestoreConfirm: Long? = null, // Account ID to restore
     val showRestoreSuccessDialog: Boolean = false,
     val duplicateUserIdDialog: DuplicateUserIdInfo? = null, // For duplicate check
+    // SSAID Fallback
+    val ssaidFallbackState: SsaidFallbackState? = null,
     // Sorting
     val sortMode: String = "lastPlayed",
     val accountPrefix: String = "MGO_"
@@ -35,6 +38,17 @@ data class DuplicateUserIdInfo(
     val userId: String,
     val existingAccountName: String,
     val pendingRequest: BackupRequest
+)
+
+/**
+ * State for SSAID fallback countdown dialog.
+ * Shown when settings_ssaid.xml is missing during backup.
+ */
+data class SsaidFallbackState(
+    val countdown: Int = 5,
+    val isCapturing: Boolean = false,
+    val capturedSsaid: String? = null,
+    val error: String? = null
 )
 
 @HiltViewModel
@@ -234,5 +248,98 @@ class HomeViewModel @Inject constructor(
 
     fun hideRestoreSuccessDialog() {
         _uiState.update { it.copy(showRestoreSuccessDialog = false) }
+    }
+
+    // ============================================================
+    // SSAID Fallback (when settings_ssaid.xml is missing)
+    // ============================================================
+
+    /**
+     * Start the SSAID fallback flow with countdown.
+     * Shows dialog: "Android ID nicht gefunden - nutze Fallback. Monopoly Go startet in 5 4 3 2 1..."
+     */
+    fun startSsaidFallback() {
+        viewModelScope.launch {
+            // Show countdown dialog
+            _uiState.update { it.copy(ssaidFallbackState = SsaidFallbackState(countdown = 5)) }
+
+            // Enable capture mode
+            backupRepository.enableSsaidCaptureMode()
+
+            // Countdown from 5 to 1
+            for (i in 5 downTo 1) {
+                _uiState.update {
+                    it.copy(ssaidFallbackState = it.ssaidFallbackState?.copy(countdown = i))
+                }
+                delay(1000)
+            }
+
+            // Start Monopoly GO
+            _uiState.update {
+                it.copy(ssaidFallbackState = it.ssaidFallbackState?.copy(isCapturing = true))
+            }
+
+            backupRepository.startMonopolyGo()
+
+            // Wait a bit for the app to start and hook to capture
+            delay(3000)
+
+            // Try to read the captured SSAID
+            val capturedSsaid = backupRepository.readCapturedSsaid()
+
+            if (capturedSsaid != null) {
+                _uiState.update {
+                    it.copy(ssaidFallbackState = it.ssaidFallbackState?.copy(
+                        isCapturing = false,
+                        capturedSsaid = capturedSsaid
+                    ))
+                }
+            } else {
+                // Retry a few times
+                var retries = 5
+                var ssaid: String? = null
+                while (retries > 0 && ssaid == null) {
+                    delay(2000)
+                    ssaid = backupRepository.readCapturedSsaid()
+                    retries--
+                }
+
+                if (ssaid != null) {
+                    _uiState.update {
+                        it.copy(ssaidFallbackState = it.ssaidFallbackState?.copy(
+                            isCapturing = false,
+                            capturedSsaid = ssaid
+                        ))
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(ssaidFallbackState = it.ssaidFallbackState?.copy(
+                            isCapturing = false,
+                            error = "Android ID konnte nicht erfasst werden"
+                        ))
+                    }
+                }
+            }
+
+            // Disable capture mode
+            backupRepository.disableSsaidCaptureMode()
+        }
+    }
+
+    /**
+     * Dismiss the SSAID fallback dialog.
+     */
+    fun dismissSsaidFallback() {
+        viewModelScope.launch {
+            backupRepository.disableSsaidCaptureMode()
+        }
+        _uiState.update { it.copy(ssaidFallbackState = null) }
+    }
+
+    /**
+     * Get the captured SSAID value (for use when completing backup).
+     */
+    fun getCapturedSsaid(): String? {
+        return _uiState.value.ssaidFallbackState?.capturedSsaid
     }
 }

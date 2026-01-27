@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.size
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.mgomanager.app.data.model.Account
@@ -315,7 +316,62 @@ fun HomeScreen(
             is BackupResult.DuplicateUserId -> {
                 // This case is handled by duplicateUserIdDialog
             }
+            is BackupResult.NeedsSsaidFallback -> {
+                // Show SSAID fallback dialog
+                viewModel.clearBackupResult()
+                viewModel.startSsaidFallback()
+            }
         }
+    }
+
+    // Show SSAID fallback countdown dialog
+    uiState.ssaidFallbackState?.let { state ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissSsaidFallback() },
+            title = { Text("Android ID nicht gefunden") },
+            text = {
+                Column {
+                    when {
+                        state.error != null -> {
+                            Text(state.error)
+                        }
+                        state.capturedSsaid != null -> {
+                            Text("Android ID erfolgreich erfasst!")
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = state.capturedSsaid,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = StatusGreen
+                            )
+                        }
+                        state.isCapturing -> {
+                            Text("Erfasse Android ID...")
+                            Spacer(modifier = Modifier.height(8.dp))
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        else -> {
+                            Text("Nutze Fallback. Monopoly Go startet in ${state.countdown}...")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (state.capturedSsaid != null || state.error != null) {
+                    TextButton(onClick = { viewModel.dismissSsaidFallback() }) {
+                        Text("OK")
+                    }
+                }
+            },
+            dismissButton = {
+                if (state.capturedSsaid == null && state.error == null) {
+                    TextButton(onClick = { viewModel.dismissSsaidFallback() }) {
+                        Text("Abbrechen")
+                    }
+                }
+            }
+        )
     }
 
     // Show duplicate User ID dialog
