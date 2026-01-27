@@ -23,9 +23,8 @@ class RestoreBackupUseCase @Inject constructor(
         const val MGO_PREFS_PATH = "$MGO_DATA_PATH/shared_prefs"
         const val SSAID_PATH = "/data/system/users/0/settings_ssaid.xml"
 
-        // MGO Manager database paths for Xposed hook access
-        const val MGO_MANAGER_DB_DIR = "/data/data/com.mgomanager.app/databases"
-        const val MGO_MANAGER_DB_PATH = "$MGO_MANAGER_DB_DIR/mgo_manager.db"
+        // Shared file for Xposed hook - world-readable location
+        const val XPOSED_SHARED_FILE = "/data/local/tmp/mgo_current_appsetid.txt"
     }
 
     suspend fun execute(accountId: Long): RestoreResult = withContext(Dispatchers.IO) {
@@ -87,9 +86,9 @@ class RestoreBackupUseCase @Inject constructor(
             // Step 8: Mark account as last restored for Xposed hook
             accountRepository.markAsLastRestored(accountId)
 
-            // Step 9: Make database world-readable for Xposed hook access
-            // The hook runs in Monopoly GO's process and needs to read our database
-            makeDatabaseWorldReadable()
+            // Step 9: Write App Set ID to shared file for Xposed hook access
+            // The hook runs in Monopoly GO's process and reads from /data/local/tmp/
+            writeSharedAppSetIdFile(account.appSetId, account.fullName)
 
             logRepository.logInfo(
                 "RESTORE",
@@ -125,22 +124,32 @@ class RestoreBackupUseCase @Inject constructor(
     }
 
     /**
-     * Make the MGO Manager database world-readable so the Xposed hook
-     * (running in Monopoly GO's process) can access it.
+     * Write the App Set ID to a shared file that the Xposed hook can read.
+     * Uses /data/local/tmp/ which is world-readable and avoids SQLite WAL issues.
+     *
+     * Format: appSetId|accountName|timestamp
      */
-    private suspend fun makeDatabaseWorldReadable() {
+    private suspend fun writeSharedAppSetIdFile(appSetId: String, accountName: String) {
         try {
-            // Set directory permissions to 755 (rwxr-xr-x)
-            rootUtil.executeCommand("chmod 755 $MGO_MANAGER_DB_DIR")
-            // Set database file permissions to 644 (rw-r--r--)
-            rootUtil.executeCommand("chmod 644 $MGO_MANAGER_DB_PATH")
-            // Also handle WAL and SHM files if they exist
-            rootUtil.executeCommand("chmod 644 $MGO_MANAGER_DB_PATH-wal 2>/dev/null || true")
-            rootUtil.executeCommand("chmod 644 $MGO_MANAGER_DB_PATH-shm 2>/dev/null || true")
-            logRepository.logInfo("RESTORE", "Datenbank-Berechtigungen für Xposed Hook gesetzt")
+            val timestamp = System.currentTimeMillis()
+            val content = "$appSetId|$accountName|$timestamp"
+
+            // Write file using root (echo with heredoc to handle special characters)
+            rootUtil.executeCommand("echo '$content' > $XPOSED_SHARED_FILE")
+
+            // Set permissions to 644 (world-readable)
+            rootUtil.executeCommand("chmod 644 $XPOSED_SHARED_FILE")
+
+            logRepository.logInfo(
+                "RESTORE",
+                "Xposed shared file geschrieben: $XPOSED_SHARED_FILE"
+            )
         } catch (e: Exception) {
-            // Log but don't fail the restore - the hook might still work
-            logRepository.logWarning("RESTORE", "Konnte Datenbank-Berechtigungen nicht setzen: ${e.message}")
+            // Log but don't fail the restore - Settings.Secure hook is the primary method
+            logRepository.logWarning(
+                "RESTORE",
+                "Konnte Xposed shared file nicht schreiben: ${e.message}"
+            )
         }
     }
 }
