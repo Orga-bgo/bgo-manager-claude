@@ -1,15 +1,20 @@
 package com.mgomanager.app.domain.usecase
 
 import android.content.Context
-import android.os.Environment
 import com.mgomanager.app.data.local.preferences.SettingsDataStore
+import com.mgomanager.app.data.model.ExportProgress
+import com.mgomanager.app.data.model.ImportProgress
+import com.mgomanager.app.data.model.OperationProgress
 import com.mgomanager.app.data.repository.AccountRepository
 import com.mgomanager.app.data.repository.LogRepository
 import com.mgomanager.app.domain.util.SSHSyncService
 import com.mgomanager.app.domain.util.SSHOperationResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -34,12 +39,25 @@ class ExportImportUseCase @Inject constructor(
     }
 
     /**
-     * Export database and all backup files to a zip file
-     * @return Path to the created zip file
+     * Export database and all backup files to a zip file with progress updates.
+     * @return Flow of ExportProgress states
      */
-    suspend fun exportData(context: Context): Result<String> = withContext(Dispatchers.IO) {
+    fun exportData(context: Context): Flow<ExportProgress> = flow {
         try {
+            val totalSteps = 7
+            var currentStep = 0
+
             logRepository.logInfo("EXPORT", "Starting data export")
+
+            // Step 1: Prepare export
+            emit(ExportProgress.InProgress(
+                OperationProgress(
+                    currentStep = ++currentStep,
+                    totalSteps = totalSteps,
+                    stepDescription = "Bereite Export vor...",
+                    percentComplete = currentStep.toFloat() / totalSteps
+                )
+            ))
 
             // Create export directory
             val exportDir = File(EXPORT_DIR)
@@ -57,6 +75,39 @@ class ExportImportUseCase @Inject constructor(
             // Get database path
             val dbPath = context.getDatabasePath("mgo_database").absolutePath
 
+            // Step 2: Prepare file list
+            emit(ExportProgress.InProgress(
+                OperationProgress(
+                    currentStep = ++currentStep,
+                    totalSteps = totalSteps,
+                    stepDescription = "Sammle Dateien...",
+                    percentComplete = currentStep.toFloat() / totalSteps
+                )
+            ))
+
+            // Collect all files to export
+            val backupsDir = File(backupPath)
+            val allBackupFiles = mutableListOf<Pair<File, String>>()
+
+            if (backupsDir.exists() && backupsDir.isDirectory) {
+                collectFilesRecursively(backupsDir, BACKUPS_FOLDER, allBackupFiles)
+            }
+
+            val totalFiles = allBackupFiles.size + 1 // +1 for database
+
+            // Step 3: Export database
+            emit(ExportProgress.InProgress(
+                OperationProgress(
+                    currentStep = ++currentStep,
+                    totalSteps = totalSteps,
+                    stepDescription = "Exportiere Datenbank...",
+                    percentComplete = currentStep.toFloat() / totalSteps,
+                    currentFile = "mgo_database",
+                    filesProcessed = 0,
+                    totalFiles = totalFiles
+                )
+            ))
+
             ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
                 // Add database file
                 val dbFile = File(dbPath)
@@ -65,55 +116,135 @@ class ExportImportUseCase @Inject constructor(
                     logRepository.logInfo("EXPORT", "Database added to export")
                 }
 
-                // Add all backup directories
-                val backupsDir = File(backupPath)
-                if (backupsDir.exists() && backupsDir.isDirectory) {
-                    backupsDir.listFiles()?.forEach { accountDir ->
-                        if (accountDir.isDirectory) {
-                            addDirectoryToZip(zos, accountDir, "$BACKUPS_FOLDER/${accountDir.name}")
-                        }
+                // Step 4: Export backup files with progress
+                emit(ExportProgress.InProgress(
+                    OperationProgress(
+                        currentStep = ++currentStep,
+                        totalSteps = totalSteps,
+                        stepDescription = "Kopiere Backup-Dateien...",
+                        percentComplete = currentStep.toFloat() / totalSteps,
+                        filesProcessed = 1,
+                        totalFiles = totalFiles
+                    )
+                ))
+
+                allBackupFiles.forEachIndexed { index, (file, entryPath) ->
+                    addFileToZip(zos, file, entryPath)
+
+                    // Emit progress every 10 files or on last file
+                    if (index % 10 == 0 || index == allBackupFiles.size - 1) {
+                        emit(ExportProgress.InProgress(
+                            OperationProgress(
+                                currentStep = currentStep,
+                                totalSteps = totalSteps,
+                                stepDescription = "Kopiere Backup-Dateien...",
+                                percentComplete = currentStep.toFloat() / totalSteps,
+                                currentFile = file.name,
+                                filesProcessed = index + 2, // +1 for database, +1 for 0-index
+                                totalFiles = totalFiles
+                            )
+                        ))
                     }
-                    logRepository.logInfo("EXPORT", "Backup files added to export")
                 }
+
+                logRepository.logInfo("EXPORT", "Backup files added to export")
             }
+
+            // Step 5: Create ZIP (finalize)
+            emit(ExportProgress.InProgress(
+                OperationProgress(
+                    currentStep = ++currentStep,
+                    totalSteps = totalSteps,
+                    stepDescription = "Finalisiere ZIP-Archiv...",
+                    percentComplete = currentStep.toFloat() / totalSteps,
+                    isIndeterminate = true
+                )
+            ))
 
             logRepository.logInfo("EXPORT", "Export completed: ${zipFile.absolutePath}")
 
-            // Auto-upload to SSH server if enabled
+            // Step 6: Auto-upload to SSH server if enabled
+            emit(ExportProgress.InProgress(
+                OperationProgress(
+                    currentStep = ++currentStep,
+                    totalSteps = totalSteps,
+                    stepDescription = "Pruefe SSH-Upload...",
+                    percentComplete = currentStep.toFloat() / totalSteps
+                )
+            ))
+
             val autoUpload = settingsDataStore.sshAutoUploadOnExport.first()
             val sshServer = settingsDataStore.sshServer.first()
+            var uploadMessage = ""
 
             if (autoUpload && sshServer.isNotBlank()) {
+                emit(ExportProgress.InProgress(
+                    OperationProgress(
+                        currentStep = currentStep,
+                        totalSteps = totalSteps,
+                        stepDescription = "Lade auf SSH-Server hoch...",
+                        percentComplete = currentStep.toFloat() / totalSteps,
+                        isIndeterminate = true
+                    )
+                ))
+
                 logRepository.logInfo("EXPORT", "Auto-uploading to SSH server...")
                 val uploadResult = sshSyncService.uploadZip(zipFile.absolutePath)
 
-                when (uploadResult) {
+                uploadMessage = when (uploadResult) {
                     is SSHOperationResult.Success -> {
                         logRepository.logInfo("EXPORT", "Auto-upload successful")
-                        Result.success("Export gespeichert und hochgeladen:\n${zipFile.absolutePath}")
+                        "\n(Upload erfolgreich)"
                     }
                     is SSHOperationResult.Error -> {
                         logRepository.logError("EXPORT", "Auto-upload failed: ${uploadResult.message}")
-                        Result.success("Export gespeichert (Upload fehlgeschlagen: ${uploadResult.message}):\n${zipFile.absolutePath}")
+                        "\n(Upload fehlgeschlagen: ${uploadResult.message})"
                     }
                 }
-            } else {
-                Result.success("Export gespeichert unter:\n${zipFile.absolutePath}")
             }
+
+            // Step 7: Cleanup
+            emit(ExportProgress.InProgress(
+                OperationProgress(
+                    currentStep = ++currentStep,
+                    totalSteps = totalSteps,
+                    stepDescription = "Raeume auf...",
+                    percentComplete = 1f
+                )
+            ))
+
+            // Brief pause to show completion
+            delay(500)
+
+            emit(ExportProgress.Success("Export gespeichert unter:\n${zipFile.absolutePath}$uploadMessage"))
 
         } catch (e: Exception) {
             logRepository.logError("EXPORT", "Export failed: ${e.message}", exception = e)
-            Result.failure(e)
+            emit(ExportProgress.Error("Export fehlgeschlagen: ${e.message}"))
         }
-    }
+    }.flowOn(Dispatchers.IO)
 
     /**
-     * Import database and backup files from a zip file
+     * Import database and backup files from a zip file with progress updates.
      * Note: This looks for the most recent export file in the exports directory
+     * @return Flow of ImportProgress states
      */
-    suspend fun importData(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
+    fun importData(context: Context): Flow<ImportProgress> = flow {
         try {
+            val totalSteps = 7
+            var currentStep = 0
+
             logRepository.logInfo("IMPORT", "Starting data import")
+
+            // Step 1: Find export file
+            emit(ImportProgress.InProgress(
+                OperationProgress(
+                    currentStep = ++currentStep,
+                    totalSteps = totalSteps,
+                    stepDescription = "Suche Export-Datei...",
+                    percentComplete = currentStep.toFloat() / totalSteps
+                )
+            ))
 
             // Find the most recent export file
             val exportDir = File(EXPORT_DIR)
@@ -122,18 +253,70 @@ class ExportImportUseCase @Inject constructor(
             }?.sortedByDescending { it.lastModified() }
 
             if (zipFiles.isNullOrEmpty()) {
-                return@withContext Result.failure(Exception("Keine Export-Datei gefunden in $EXPORT_DIR"))
+                emit(ImportProgress.Error("Keine Export-Datei gefunden in $EXPORT_DIR"))
+                return@flow
             }
 
             val zipFile = zipFiles.first()
             logRepository.logInfo("IMPORT", "Importing from: ${zipFile.name}")
+
+            // Step 2: Validate ZIP
+            emit(ImportProgress.InProgress(
+                OperationProgress(
+                    currentStep = ++currentStep,
+                    totalSteps = totalSteps,
+                    stepDescription = "Validiere Datei: ${zipFile.name}",
+                    percentComplete = currentStep.toFloat() / totalSteps
+                )
+            ))
 
             // Get backup path from settings
             val backupPath = settingsDataStore.backupRootPath.first()
 
             // Get database path
             val dbPath = context.getDatabasePath("mgo_database").parentFile?.absolutePath
-                ?: return@withContext Result.failure(Exception("Database path not found"))
+                ?: run {
+                    emit(ImportProgress.Error("Database path not found"))
+                    return@flow
+                }
+
+            // Step 3: Count entries for progress
+            emit(ImportProgress.InProgress(
+                OperationProgress(
+                    currentStep = ++currentStep,
+                    totalSteps = totalSteps,
+                    stepDescription = "Zaehle Eintraege...",
+                    percentComplete = currentStep.toFloat() / totalSteps,
+                    isIndeterminate = true
+                )
+            ))
+
+            var totalEntries = 0
+            ZipInputStream(FileInputStream(zipFile)).use { zis ->
+                var entry: ZipEntry? = zis.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory) {
+                        totalEntries++
+                    }
+                    zis.closeEntry()
+                    entry = zis.nextEntry
+                }
+            }
+
+            // Step 4: Extract files
+            emit(ImportProgress.InProgress(
+                OperationProgress(
+                    currentStep = ++currentStep,
+                    totalSteps = totalSteps,
+                    stepDescription = "Extrahiere Archiv...",
+                    percentComplete = currentStep.toFloat() / totalSteps,
+                    filesProcessed = 0,
+                    totalFiles = totalEntries
+                )
+            ))
+
+            var filesExtracted = 0
+            var dbRestored = false
 
             ZipInputStream(FileInputStream(zipFile)).use { zis ->
                 var entry: ZipEntry? = zis.nextEntry
@@ -146,7 +329,9 @@ class ExportImportUseCase @Inject constructor(
                             val fileName = entryName.removePrefix("$DB_FOLDER/")
                             val destFile = File(dbPath, fileName)
                             extractFile(zis, destFile)
+                            dbRestored = true
                             logRepository.logInfo("IMPORT", "Database restored: $fileName")
+                            filesExtracted++
                         }
                         entryName.startsWith("$BACKUPS_FOLDER/") -> {
                             // Extract backup files
@@ -157,8 +342,24 @@ class ExportImportUseCase @Inject constructor(
                             } else {
                                 destFile.parentFile?.mkdirs()
                                 extractFile(zis, destFile)
+                                filesExtracted++
                             }
                         }
+                    }
+
+                    // Emit progress every 10 files or on last file
+                    if (!entry.isDirectory && (filesExtracted % 10 == 0 || filesExtracted == totalEntries)) {
+                        emit(ImportProgress.InProgress(
+                            OperationProgress(
+                                currentStep = currentStep,
+                                totalSteps = totalSteps,
+                                stepDescription = "Extrahiere Archiv...",
+                                percentComplete = currentStep.toFloat() / totalSteps,
+                                currentFile = entry.name.substringAfterLast("/"),
+                                filesProcessed = filesExtracted,
+                                totalFiles = totalEntries
+                            )
+                        ))
                     }
 
                     zis.closeEntry()
@@ -166,12 +367,69 @@ class ExportImportUseCase @Inject constructor(
                 }
             }
 
+            // Step 5: Verify database
+            emit(ImportProgress.InProgress(
+                OperationProgress(
+                    currentStep = ++currentStep,
+                    totalSteps = totalSteps,
+                    stepDescription = "Verifiziere Datenbank...",
+                    percentComplete = currentStep.toFloat() / totalSteps
+                )
+            ))
+
+            if (!dbRestored) {
+                logRepository.logWarning("IMPORT", "No database found in export file")
+            }
+
+            // Step 6: Update paths
+            emit(ImportProgress.InProgress(
+                OperationProgress(
+                    currentStep = ++currentStep,
+                    totalSteps = totalSteps,
+                    stepDescription = "Aktualisiere Pfade...",
+                    percentComplete = currentStep.toFloat() / totalSteps
+                )
+            ))
+
+            // Note: Path updates happen automatically when Room re-initializes
+
+            // Step 7: Cleanup
+            emit(ImportProgress.InProgress(
+                OperationProgress(
+                    currentStep = ++currentStep,
+                    totalSteps = totalSteps,
+                    stepDescription = "Raeume auf...",
+                    percentComplete = 1f
+                )
+            ))
+
+            // Brief pause to show completion
+            delay(500)
+
             logRepository.logInfo("IMPORT", "Import completed successfully")
-            Result.success(Unit)
+            emit(ImportProgress.Success("Import erfolgreich abgeschlossen!\n$filesExtracted Dateien importiert."))
 
         } catch (e: Exception) {
             logRepository.logError("IMPORT", "Import failed: ${e.message}", exception = e)
-            Result.failure(e)
+            emit(ImportProgress.Error("Import fehlgeschlagen: ${e.message}"))
+        }
+    }.flowOn(Dispatchers.IO)
+
+    /**
+     * Recursively collects all files from a directory.
+     */
+    private fun collectFilesRecursively(
+        dir: File,
+        basePath: String,
+        result: MutableList<Pair<File, String>>
+    ) {
+        dir.listFiles()?.forEach { file ->
+            val entryPath = "$basePath/${file.name}"
+            if (file.isDirectory) {
+                collectFilesRecursively(file, entryPath, result)
+            } else {
+                result.add(file to entryPath)
+            }
         }
     }
 
@@ -180,17 +438,6 @@ class ExportImportUseCase @Inject constructor(
             zos.putNextEntry(ZipEntry(entryName))
             fis.copyTo(zos)
             zos.closeEntry()
-        }
-    }
-
-    private fun addDirectoryToZip(zos: ZipOutputStream, dir: File, basePath: String) {
-        dir.listFiles()?.forEach { file ->
-            val entryPath = "$basePath/${file.name}"
-            if (file.isDirectory) {
-                addDirectoryToZip(zos, file, entryPath)
-            } else {
-                addFileToZip(zos, file, entryPath)
-            }
         }
     }
 

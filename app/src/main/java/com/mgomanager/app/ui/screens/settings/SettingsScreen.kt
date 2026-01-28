@@ -20,6 +20,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.mgomanager.app.data.model.ExportProgress
+import com.mgomanager.app.data.model.ImportProgress
+import com.mgomanager.app.ui.components.OperationProgressDialog
 import com.mgomanager.app.ui.navigation.Screen
 import com.mgomanager.app.ui.theme.StatusGreen
 
@@ -161,33 +164,22 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        val isExporting = uiState.exportProgress != null
+                        val isImporting = uiState.importProgress != null
+
                         Button(
                             onClick = { viewModel.exportData() },
                             modifier = Modifier.weight(1f),
-                            enabled = !uiState.isExporting
+                            enabled = !isExporting && !isImporting
                         ) {
-                            if (uiState.isExporting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Text("Export")
-                            }
+                            Text("Export")
                         }
                         OutlinedButton(
                             onClick = { viewModel.importData() },
                             modifier = Modifier.weight(1f),
-                            enabled = !uiState.isImporting
+                            enabled = !isExporting && !isImporting
                         ) {
-                            if (uiState.isImporting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Text("Import")
-                            }
+                            Text("Import")
                         }
                     }
                 }
@@ -483,6 +475,24 @@ fun SettingsScreen(
                     .padding(8.dp)
             )
         }
+    }
+
+    // Export progress dialog
+    val exportProgress = uiState.exportProgress
+    if (exportProgress is ExportProgress.InProgress) {
+        OperationProgressDialog(
+            title = "Exportiere Datenbank",
+            progress = exportProgress.progress
+        )
+    }
+
+    // Import progress dialog
+    val importProgress = uiState.importProgress
+    if (importProgress is ImportProgress.InProgress) {
+        OperationProgressDialog(
+            title = "Importiere Datenbank",
+            progress = importProgress.progress
+        )
     }
 
     // Export result dialog

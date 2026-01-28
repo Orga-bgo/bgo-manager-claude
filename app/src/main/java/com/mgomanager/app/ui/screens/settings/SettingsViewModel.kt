@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mgomanager.app.data.local.preferences.SettingsDataStore
+import com.mgomanager.app.data.model.ExportProgress
+import com.mgomanager.app.data.model.ImportProgress
 import com.mgomanager.app.domain.usecase.ExportImportUseCase
 import com.mgomanager.app.domain.util.RootUtil
 import com.mgomanager.app.domain.util.SSHSyncService
@@ -23,8 +25,8 @@ data class SettingsUiState(
     val pathSaved: Boolean = false,
     val exportResult: String? = null,
     val importResult: String? = null,
-    val isExporting: Boolean = false,
-    val isImporting: Boolean = false,
+    val exportProgress: ExportProgress? = null,
+    val importProgress: ImportProgress? = null,
     // SSH settings
     val sshPrivateKeyPath: String = "/storage/emulated/0/.ssh/id_ed25519",
     val sshServer: String = "",
@@ -161,28 +163,74 @@ class SettingsViewModel @Inject constructor(
 
     fun exportData() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isExporting = true) }
-            val result = exportImportUseCase.exportData(context)
-            _uiState.update {
-                it.copy(
-                    isExporting = false,
-                    exportResult = result.getOrElse { e -> "Export fehlgeschlagen: ${e.message}" }
-                )
-            }
+            exportImportUseCase.exportData(context)
+                .collect { progress ->
+                    _uiState.update { it.copy(exportProgress = progress) }
+
+                    // When complete or error, also set the result
+                    when (progress) {
+                        is ExportProgress.Success -> {
+                            _uiState.update {
+                                it.copy(
+                                    exportProgress = null,
+                                    exportResult = progress.filePath
+                                )
+                            }
+                        }
+                        is ExportProgress.Error -> {
+                            _uiState.update {
+                                it.copy(
+                                    exportProgress = null,
+                                    exportResult = progress.message
+                                )
+                            }
+                        }
+                        is ExportProgress.InProgress -> {
+                            // Progress is already updated above
+                        }
+                    }
+                }
         }
     }
 
     fun importData() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isImporting = true) }
-            val result = exportImportUseCase.importData(context)
-            _uiState.update {
-                it.copy(
-                    isImporting = false,
-                    importResult = if (result.isSuccess) "Import erfolgreich!" else "Import fehlgeschlagen: ${result.exceptionOrNull()?.message}"
-                )
-            }
+            exportImportUseCase.importData(context)
+                .collect { progress ->
+                    _uiState.update { it.copy(importProgress = progress) }
+
+                    // When complete or error, also set the result
+                    when (progress) {
+                        is ImportProgress.Success -> {
+                            _uiState.update {
+                                it.copy(
+                                    importProgress = null,
+                                    importResult = progress.message
+                                )
+                            }
+                        }
+                        is ImportProgress.Error -> {
+                            _uiState.update {
+                                it.copy(
+                                    importProgress = null,
+                                    importResult = progress.message
+                                )
+                            }
+                        }
+                        is ImportProgress.InProgress -> {
+                            // Progress is already updated above
+                        }
+                    }
+                }
         }
+    }
+
+    fun resetExportProgress() {
+        _uiState.update { it.copy(exportProgress = null) }
+    }
+
+    fun resetImportProgress() {
+        _uiState.update { it.copy(importProgress = null) }
     }
 
     fun clearExportResult() {

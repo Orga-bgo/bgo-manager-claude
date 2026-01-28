@@ -8,7 +8,10 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
 
 /**
  * Main Xposed hook class for Monopoly GO.
- * Intercepts App Set ID and Android ID requests and returns the ID from the last restored account.
+ * Intercepts App Set ID requests and returns the ID from the last restored account.
+ *
+ * Note: SSAID (Android ID) is now handled by directly modifying settings_ssaid.xml
+ * via SsaidManager during restore. This is more reliable than hooking Settings.Secure.
  *
  * Entry point defined in: assets/xposed_init
  */
@@ -27,74 +30,17 @@ class MonopolyGoHook : IXposedHookLoadPackage {
         HookLogger.log("Hooking Monopoly GO (${lpparam.packageName})")
 
         try {
-            hookSettingsSecure(lpparam)
+            // Only hook App Set ID - SSAID is handled via settings_ssaid.xml modification
             hookAppSetIdClient(lpparam)
-            HookLogger.log("All hooks installed successfully")
+            HookLogger.log("App Set ID hook installed successfully")
         } catch (e: Exception) {
             HookLogger.logError("Failed to install hooks", e)
         }
     }
 
-    /**
-     * Hook Settings.Secure.getString() to replace android_id with stored SSAID.
-     *
-     * Two modes:
-     * 1. CAPTURE MODE: Write original android_id to file (for backup fallback when settings_ssaid.xml is missing)
-     * 2. NORMAL MODE: Return stored SSAID for the last restored account
-     */
-    private fun hookSettingsSecure(lpparam: LoadPackageParam) {
-        try {
-            val settingsSecureClass = XposedHelpers.findClass(
-                "android.provider.Settings\$Secure",
-                lpparam.classLoader
-            )
-
-            XposedHelpers.findAndHookMethod(
-                settingsSecureClass,
-                "getString",
-                android.content.ContentResolver::class.java,
-                String::class.java,
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        val name = param.args[1] as? String
-
-                        // Only intercept android_id requests
-                        if (name == "android_id") {
-                            val original = param.result as? String
-
-                            // Check for capture mode (MGO Manager is creating a backup and needs the original ID)
-                            if (AppSetIdProvider.isCaptureMode()) {
-                                if (original != null) {
-                                    AppSetIdProvider.writeCapturedSsaid(original)
-                                    HookLogger.log("CAPTURE MODE: Wrote original Android ID to file: $original")
-                                }
-                                // Don't replace the result in capture mode - let the original through
-                                return
-                            }
-
-                            // Normal mode: Replace android_id with stored SSAID
-                            val context = AndroidAppHelper.currentApplication()
-                            if (context == null) {
-                                HookLogger.log("Context not available yet, skipping hook")
-                                return
-                            }
-
-                            val ssaid = AppSetIdProvider.getSsaid(context)
-
-                            if (ssaid != null) {
-                                param.result = ssaid
-                                HookLogger.log("Hooked android_id: Original=$original, Replaced=$ssaid")
-                            }
-                        }
-                    }
-                }
-            )
-
-            HookLogger.log("Settings.Secure.getString hooked")
-        } catch (e: Exception) {
-            HookLogger.logError("Failed to hook Settings.Secure", e)
-        }
-    }
+    // Note: hookSettingsSecure() has been removed.
+    // SSAID is now handled by directly modifying settings_ssaid.xml via SsaidManager
+    // during restore. This is more reliable and doesn't require the Xposed module to be active.
 
     /**
      * Hook AppSetIdClient.getAppSetIdInfo() to return our custom App Set ID.

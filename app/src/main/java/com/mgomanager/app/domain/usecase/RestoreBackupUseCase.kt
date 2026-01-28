@@ -5,6 +5,7 @@ import com.mgomanager.app.data.repository.AccountRepository
 import com.mgomanager.app.data.repository.LogRepository
 import com.mgomanager.app.domain.util.FilePermissionManager
 import com.mgomanager.app.domain.util.RootUtil
+import com.mgomanager.app.domain.util.SsaidManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -14,16 +15,16 @@ class RestoreBackupUseCase @Inject constructor(
     private val rootUtil: RootUtil,
     private val permissionManager: FilePermissionManager,
     private val accountRepository: AccountRepository,
-    private val logRepository: LogRepository
+    private val logRepository: LogRepository,
+    private val ssaidManager: SsaidManager
 ) {
 
     companion object {
         const val MGO_DATA_PATH = "/data/data/com.scopely.monopolygo"
         const val MGO_FILES_PATH = "$MGO_DATA_PATH/files"
         const val MGO_PREFS_PATH = "$MGO_DATA_PATH/shared_prefs"
-        const val SSAID_PATH = "/data/system/users/0/settings_ssaid.xml"
 
-        // Shared file for Xposed hook - world-readable location
+        // Shared file for Xposed hook - world-readable location (App Set ID only)
         const val XPOSED_SHARED_FILE = "/data/local/tmp/mgo_current_appsetid.txt"
     }
 
@@ -55,11 +56,33 @@ class RestoreBackupUseCase @Inject constructor(
             copyBackupDirectory("${backupPath}DiskBasedCacheDirectory", "$MGO_FILES_PATH/", account.fullName)
             copyBackupDirectory("${backupPath}shared_prefs", "$MGO_DATA_PATH/", account.fullName)
 
-            // Step 5: Copy SSAID file back
-            val ssaidFile = File("${backupPath}settings_ssaid.xml")
-            if (ssaidFile.exists()) {
-                rootUtil.executeCommand("cp ${backupPath}settings_ssaid.xml $SSAID_PATH").getOrThrow()
-                logRepository.logInfo("RESTORE", "SSAID wiederhergestellt", account.fullName)
+            // Step 5: Write SSAID directly to settings_ssaid.xml using SsaidManager
+            // This is more reliable than copying the file and works across different device states
+            if (account.ssaid != "nicht vorhanden" && ssaidManager.isValidAndroidId(account.ssaid)) {
+                val ssaidSuccess = ssaidManager.setAndroidIdForPackage(
+                    packageName = SsaidManager.TARGET_PACKAGE,
+                    androidId = account.ssaid
+                )
+
+                if (ssaidSuccess) {
+                    logRepository.logInfo(
+                        "RESTORE",
+                        "SSAID erfolgreich in settings_ssaid.xml geschrieben: ${account.ssaid}",
+                        account.fullName
+                    )
+                } else {
+                    logRepository.logWarning(
+                        "RESTORE",
+                        "SSAID konnte nicht in settings_ssaid.xml geschrieben werden",
+                        account.fullName
+                    )
+                }
+            } else {
+                logRepository.logWarning(
+                    "RESTORE",
+                    "Keine gueltige SSAID vorhanden (${account.ssaid}), ueberspringe SSAID-Wiederherstellung",
+                    account.fullName
+                )
             }
 
             // Step 6: Restore permissions
@@ -86,13 +109,14 @@ class RestoreBackupUseCase @Inject constructor(
             // Step 8: Mark account as last restored for Xposed hook
             accountRepository.markAsLastRestored(accountId)
 
-            // Step 9: Write App Set ID and SSAID to shared file for Xposed hook access
+            // Step 9: Write App Set ID to shared file for Xposed hook access
             // The hook runs in Monopoly GO's process and reads from /data/local/tmp/
+            // Note: SSAID is now handled via settings_ssaid.xml modification (no hook needed)
             writeSharedHookFile(account.appSetId, account.ssaid, account.fullName)
 
             logRepository.logInfo(
                 "RESTORE",
-                "Account als zuletzt wiederhergestellt markiert. Xposed Hook nutzt App Set ID: ${account.appSetId}",
+                "Xposed Hook bereitgestellt - App Set ID: ${account.appSetId} (SSAID via settings_ssaid.xml)",
                 account.fullName
             )
 
@@ -124,14 +148,15 @@ class RestoreBackupUseCase @Inject constructor(
     }
 
     /**
-     * Write App Set ID and SSAID to a shared file that the Xposed hook can read.
+     * Write App Set ID to a shared file that the Xposed hook can read.
      * Uses /data/local/tmp/ which is world-readable and avoids SQLite WAL issues.
      *
      * Format: appSetId|ssaid|accountName|timestamp
+     * Note: SSAID is included for backward compatibility but is no longer used by the hook.
+     *       SSAID is now written directly to settings_ssaid.xml via SsaidManager.
      *
      * The hook uses:
-     * - appSetId for App Set ID replacement
-     * - ssaid for Android ID (Settings.Secure.getString) replacement
+     * - appSetId for App Set ID replacement only
      */
     private suspend fun writeSharedHookFile(appSetId: String, ssaid: String, accountName: String) {
         try {
