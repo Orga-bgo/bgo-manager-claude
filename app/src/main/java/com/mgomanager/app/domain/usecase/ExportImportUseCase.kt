@@ -307,7 +307,8 @@ class ExportImportUseCase @Inject constructor(
             ZipInputStream(FileInputStream(zipFile)).use { zis ->
                 var entry: ZipEntry? = zis.nextEntry
                 while (entry != null) {
-                    if (!entry.isDirectory) {
+                    val currentEntry = entry  // Create immutable reference for safe access
+                    if (!currentEntry.isDirectory) {
                         totalEntries++
                     }
                     zis.closeEntry()
