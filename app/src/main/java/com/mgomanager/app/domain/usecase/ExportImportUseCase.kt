@@ -307,7 +307,8 @@ class ExportImportUseCase @Inject constructor(
             ZipInputStream(FileInputStream(zipFile)).use { zis ->
                 var entry: ZipEntry? = zis.nextEntry
                 while (entry != null) {
-                    if (!entry.isDirectory) {
+                    val currentEntry = entry  // Create immutable reference for safe access
+                    if (!currentEntry.isDirectory) {
                         totalEntries++
                     }
                     zis.closeEntry()
@@ -333,7 +334,8 @@ class ExportImportUseCase @Inject constructor(
             ZipInputStream(FileInputStream(zipFile)).use { zis ->
                 var entry: ZipEntry? = zis.nextEntry
                 while (entry != null) {
-                    val entryName = entry.name
+                    val currentEntry = entry  // Create immutable reference for safe access
+                    val entryName = currentEntry.name
 
                     when {
                         entryName.startsWith("$DB_FOLDER/") -> {
@@ -349,7 +351,7 @@ class ExportImportUseCase @Inject constructor(
                             // Extract backup files
                             val relativePath = entryName.removePrefix("$BACKUPS_FOLDER/")
                             val destFile = File(backupPath, relativePath)
-                            if (entry.isDirectory) {
+                            if (currentEntry.isDirectory) {
                                 destFile.mkdirs()
                             } else {
                                 destFile.parentFile?.mkdirs()
@@ -360,14 +362,14 @@ class ExportImportUseCase @Inject constructor(
                     }
 
                     // Emit progress every 10 files or on last file
-                    if (!entry.isDirectory && (filesExtracted % 10 == 0 || filesExtracted == totalEntries)) {
+                    if (!currentEntry.isDirectory && (filesExtracted % 10 == 0 || filesExtracted == totalEntries)) {
                         emit(ImportProgress.InProgress(
                             OperationProgress(
                                 currentStep = currentStep,
                                 totalSteps = totalSteps,
                                 stepDescription = "Extrahiere Archiv...",
                                 percentComplete = currentStep.toFloat() / totalSteps,
-                                currentFile = entry.name.substringAfterLast("/"),
+                                currentFile = currentEntry.name.substringAfterLast("/"),
                                 filesProcessed = filesExtracted,
                                 totalFiles = totalEntries
                             )
