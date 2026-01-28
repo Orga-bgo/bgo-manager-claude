@@ -435,7 +435,6 @@ class SsaidManager @Inject constructor(
         val match = versionRegex.find(xmlContent)
         if (match != null) {
             originalSettingsVersion = match.groupValues[1]
-            logRepository.logInfo("SSAID", "Settings Version: $originalSettingsVersion")
         }
     }
 
@@ -608,7 +607,6 @@ class SsaidManager @Inject constructor(
                     settingElement.setAttribute("value", androidId.lowercase())
                     settingElement.setAttribute("defaultValue", androidId.lowercase())
                     packageFound = true
-                    logRepository.logInfo("SSAID", "Bestehenden Eintrag aktualisiert (ID: $id)")
                 }
             }
 
@@ -627,13 +625,10 @@ class SsaidManager @Inject constructor(
                 settingsElement.appendChild(doc.createTextNode("\n    "))
                 settingsElement.appendChild(newSetting)
                 settingsElement.appendChild(doc.createTextNode("\n"))
-
-                logRepository.logInfo("SSAID", "Neuen Eintrag hinzugefuegt (ID: $newId)")
             }
 
             documentToString(doc)
         } catch (e: Exception) {
-            logRepository.logError("SSAID", "XML-Update Fehler: ${e.message}", exception = e)
             null
         }
     }
@@ -648,7 +643,6 @@ class SsaidManager @Inject constructor(
             val inputSource = InputSource(StringReader(xml))
             builder.parse(inputSource)
         } catch (e: Exception) {
-            logRepository.logError("SSAID", "XML-Parse Fehler: ${e.message}", exception = e)
             null
         }
     }
@@ -674,7 +668,6 @@ class SsaidManager @Inject constructor(
 
             result
         } catch (e: Exception) {
-            logRepository.logError("SSAID", "XML-Serialisierung Fehler: ${e.message}", exception = e)
             null
         }
     }
