@@ -54,7 +54,7 @@ fun OperationProgressDialog(
                     )
                 } else {
                     LinearProgressIndicator(
-                        progress = { progress.percentComplete },
+                        progress = progress.percentComplete,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
