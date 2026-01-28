@@ -2,6 +2,7 @@ package com.mgomanager.app.domain.usecase
 
 import android.content.Context
 import android.os.Environment
+import com.mgomanager.app.data.local.database.AppDatabase
 import com.mgomanager.app.data.local.preferences.SettingsDataStore
 import com.mgomanager.app.data.repository.AccountRepository
 import com.mgomanager.app.data.repository.LogRepository
@@ -55,13 +56,24 @@ class ExportImportUseCase @Inject constructor(
             val backupPath = settingsDataStore.backupRootPath.first()
 
             // Get database path
-            val dbPath = context.getDatabasePath("mgo_database").absolutePath
+            val dbPath = context.getDatabasePath(AppDatabase.DATABASE_NAME).absolutePath
 
             ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
-                // Add database file
+                // Add database file and related files (WAL, SHM)
                 val dbFile = File(dbPath)
                 if (dbFile.exists()) {
                     addFileToZip(zos, dbFile, "$DB_FOLDER/${dbFile.name}")
+
+                    // Also export WAL and SHM files if they exist
+                    val walFile = File("$dbPath-wal")
+                    val shmFile = File("$dbPath-shm")
+                    if (walFile.exists()) {
+                        addFileToZip(zos, walFile, "$DB_FOLDER/${walFile.name}")
+                    }
+                    if (shmFile.exists()) {
+                        addFileToZip(zos, shmFile, "$DB_FOLDER/${shmFile.name}")
+                    }
+
                     logRepository.logInfo("EXPORT", "Database added to export")
                 }
 
@@ -132,7 +144,7 @@ class ExportImportUseCase @Inject constructor(
             val backupPath = settingsDataStore.backupRootPath.first()
 
             // Get database path
-            val dbPath = context.getDatabasePath("mgo_database").parentFile?.absolutePath
+            val dbPath = context.getDatabasePath(AppDatabase.DATABASE_NAME).parentFile?.absolutePath
                 ?: return@withContext Result.failure(Exception("Database path not found"))
 
             ZipInputStream(FileInputStream(zipFile)).use { zis ->

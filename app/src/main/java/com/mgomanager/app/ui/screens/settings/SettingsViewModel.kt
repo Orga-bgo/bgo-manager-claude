@@ -179,7 +179,10 @@ class SettingsViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     isImporting = false,
-                    importResult = if (result.isSuccess) "Import erfolgreich!" else "Import fehlgeschlagen: ${result.exceptionOrNull()?.message}"
+                    importResult = if (result.isSuccess)
+                        "Import erfolgreich!\n\nBitte starte die App neu, um die importierten Daten zu laden."
+                    else
+                        "Import fehlgeschlagen: ${result.exceptionOrNull()?.message}"
                 )
             }
         }
