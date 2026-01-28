@@ -119,4 +119,25 @@ class AccountRepository @Inject constructor(
     fun getAccountCount(): Flow<Int> = accountDao.getAccountCount()
     fun getErrorCount(): Flow<Int> = accountDao.getErrorAccountCount()
     fun getSusCount(): Flow<Int> = accountDao.getSusAccountCount()
+
+    // ============================================================
+    // Xposed Hook Support Methods
+    // ============================================================
+
+    /**
+     * Mark an account as the last restored.
+     * Clears the flag from all other accounts first.
+     * Used by Xposed hook to determine which App Set ID to return.
+     */
+    suspend fun markAsLastRestored(accountId: Long) {
+        accountDao.clearLastRestored()
+        accountDao.markAsLastRestored(accountId)
+    }
+
+    /**
+     * Get the last restored account.
+     */
+    suspend fun getLastRestoredAccount(): Account? {
+        return accountDao.getLastRestoredAccount()?.toDomain()
+    }
 }

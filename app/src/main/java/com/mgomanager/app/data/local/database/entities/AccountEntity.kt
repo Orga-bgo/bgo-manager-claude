@@ -43,7 +43,10 @@ data class AccountEntity(
     val backupPath: String,
     val fileOwner: String,
     val fileGroup: String,
-    val filePermissions: String
+    val filePermissions: String,
+
+    // Xposed Hook: Marks the last restored account for App Set ID replacement
+    val isLastRestored: Boolean = false
 )
 
 /**
@@ -71,7 +74,8 @@ fun AccountEntity.toDomain(): Account {
         backupPath = backupPath,
         fileOwner = fileOwner,
         fileGroup = fileGroup,
-        filePermissions = filePermissions
+        filePermissions = filePermissions,
+        isLastRestored = isLastRestored
     )
 }
 
@@ -97,6 +101,7 @@ fun Account.toEntity(): AccountEntity {
         backupPath = backupPath,
         fileOwner = fileOwner,
         fileGroup = fileGroup,
-        filePermissions = filePermissions
+        filePermissions = filePermissions,
+        isLastRestored = isLastRestored
     )
 }

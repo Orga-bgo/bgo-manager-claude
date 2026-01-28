@@ -24,6 +24,17 @@ sealed class BackupResult {
         val userId: String,
         val existingAccountName: String
     ) : BackupResult()
+
+    /**
+     * SSAID file not found - need to start Monopoly GO to capture Android ID via hook.
+     * Contains partial backup data that will be completed after SSAID capture.
+     */
+    data class NeedsSsaidFallback(
+        val backupPath: String,
+        val accountName: String,
+        val prefix: String,
+        val message: String = "Android ID nicht gefunden - nutze Fallback"
+    ) : BackupResult()
 }
 
 /**

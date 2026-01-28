@@ -57,4 +57,35 @@ interface AccountDao {
 
     @Query("UPDATE accounts SET hasError = :hasError WHERE id = :accountId")
     suspend fun updateErrorStatus(accountId: Long, hasError: Boolean)
+
+    // ============================================================
+    // Xposed Hook Support Methods
+    // ============================================================
+
+    /**
+     * Clears isLastRestored flag for all accounts.
+     * Called before marking a new account as last restored.
+     */
+    @Query("UPDATE accounts SET isLastRestored = 0")
+    suspend fun clearLastRestored()
+
+    /**
+     * Marks a specific account as the last restored.
+     * Used by Xposed hook to determine which App Set ID to return.
+     */
+    @Query("UPDATE accounts SET isLastRestored = 1 WHERE id = :accountId")
+    suspend fun markAsLastRestored(accountId: Long)
+
+    /**
+     * Gets the last restored account (suspend version for normal app use).
+     */
+    @Query("SELECT * FROM accounts WHERE isLastRestored = 1 LIMIT 1")
+    suspend fun getLastRestoredAccount(): AccountEntity?
+
+    /**
+     * Gets the last restored account (synchronous version for Xposed hook).
+     * IMPORTANT: This is called from Xposed hook which doesn't run in a coroutine context.
+     */
+    @Query("SELECT * FROM accounts WHERE isLastRestored = 1 LIMIT 1")
+    fun getLastRestoredAccountSync(): AccountEntity?
 }

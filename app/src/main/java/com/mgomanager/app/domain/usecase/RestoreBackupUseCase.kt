@@ -22,6 +22,9 @@ class RestoreBackupUseCase @Inject constructor(
         const val MGO_FILES_PATH = "$MGO_DATA_PATH/files"
         const val MGO_PREFS_PATH = "$MGO_DATA_PATH/shared_prefs"
         const val SSAID_PATH = "/data/system/users/0/settings_ssaid.xml"
+
+        // Shared file for Xposed hook - world-readable location
+        const val XPOSED_SHARED_FILE = "/data/local/tmp/mgo_current_appsetid.txt"
     }
 
     suspend fun execute(accountId: Long): RestoreResult = withContext(Dispatchers.IO) {
@@ -80,6 +83,19 @@ class RestoreBackupUseCase @Inject constructor(
             // Step 7: Update lastPlayedAt timestamp
             accountRepository.updateLastPlayedTimestamp(accountId)
 
+            // Step 8: Mark account as last restored for Xposed hook
+            accountRepository.markAsLastRestored(accountId)
+
+            // Step 9: Write App Set ID and SSAID to shared file for Xposed hook access
+            // The hook runs in Monopoly GO's process and reads from /data/local/tmp/
+            writeSharedHookFile(account.appSetId, account.ssaid, account.fullName)
+
+            logRepository.logInfo(
+                "RESTORE",
+                "Account als zuletzt wiederhergestellt markiert. Xposed Hook nutzt App Set ID: ${account.appSetId}",
+                account.fullName
+            )
+
             logRepository.logInfo("RESTORE", "Restore erfolgreich abgeschlossen", account.fullName)
             RestoreResult.Success(account.fullName)
 
@@ -104,6 +120,40 @@ class RestoreBackupUseCase @Inject constructor(
             val errorMsg = result.exceptionOrNull()?.message ?: "Unknown error"
             logRepository.logError("RESTORE", "Fehler beim Wiederherstellen: $source - $errorMsg", accountName)
             throw Exception("Verzeichnis konnte nicht wiederhergestellt werden: $source - $errorMsg")
+        }
+    }
+
+    /**
+     * Write App Set ID and SSAID to a shared file that the Xposed hook can read.
+     * Uses /data/local/tmp/ which is world-readable and avoids SQLite WAL issues.
+     *
+     * Format: appSetId|ssaid|accountName|timestamp
+     *
+     * The hook uses:
+     * - appSetId for App Set ID replacement
+     * - ssaid for Android ID (Settings.Secure.getString) replacement
+     */
+    private suspend fun writeSharedHookFile(appSetId: String, ssaid: String, accountName: String) {
+        try {
+            val timestamp = System.currentTimeMillis()
+            val content = "$appSetId|$ssaid|$accountName|$timestamp"
+
+            // Write file using root (echo with heredoc to handle special characters)
+            rootUtil.executeCommand("echo '$content' > $XPOSED_SHARED_FILE")
+
+            // Set permissions to 644 (world-readable)
+            rootUtil.executeCommand("chmod 644 $XPOSED_SHARED_FILE")
+
+            logRepository.logInfo(
+                "RESTORE",
+                "Xposed shared file geschrieben (AppSetId: $appSetId, SSAID: $ssaid)"
+            )
+        } catch (e: Exception) {
+            // Log but don't fail the restore - hook might still work with cached values
+            logRepository.logWarning(
+                "RESTORE",
+                "Konnte Xposed shared file nicht schreiben: ${e.message}"
+            )
         }
     }
 }

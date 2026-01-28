@@ -37,6 +37,10 @@ class CreateBackupUseCase @Inject constructor(
         const val MGO_PREFS_PATH = "$MGO_DATA_PATH/shared_prefs"
         const val SSAID_PATH = "/data/system/users/0/settings_ssaid.xml"
         const val PLAYER_PREFS_FILE = "com.scopely.monopolygo.v2.playerprefs.xml"
+
+        // Xposed hook capture mode files (for SSAID fallback)
+        const val CAPTURE_MODE_FLAG = "/data/local/tmp/mgo_capture_mode"
+        const val CAPTURED_SSAID_FILE = "/data/local/tmp/mgo_captured_ssaid.txt"
     }
 
     suspend fun execute(request: BackupRequest, forceDuplicate: Boolean = false): BackupResult = withContext(Dispatchers.IO) {
@@ -162,6 +166,122 @@ class CreateBackupUseCase @Inject constructor(
             val errorMsg = result.exceptionOrNull()?.message ?: "Unknown error"
             logRepository.logError("BACKUP", "Fehler beim Kopieren: $source - $errorMsg", accountName)
             throw Exception("Verzeichnis konnte nicht kopiert werden: $source - $errorMsg")
+        }
+    }
+
+    // ============================================================
+    // SSAID Capture Mode (Fallback when settings_ssaid.xml is missing)
+    // ============================================================
+
+    /**
+     * Enable capture mode - creates flag file that tells the Xposed hook
+     * to write the original Android ID to a capture file.
+     */
+    suspend fun enableCaptureMode(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            // Clean up any old capture file
+            rootUtil.executeCommand("rm -f $CAPTURED_SSAID_FILE")
+            // Create the capture mode flag
+            rootUtil.executeCommand("touch $CAPTURE_MODE_FLAG && chmod 644 $CAPTURE_MODE_FLAG")
+            logRepository.logInfo("BACKUP", "SSAID Capture Mode aktiviert")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            logRepository.logError("BACKUP", "Konnte Capture Mode nicht aktivieren: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Disable capture mode - removes the flag file.
+     */
+    suspend fun disableCaptureMode(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            rootUtil.executeCommand("rm -f $CAPTURE_MODE_FLAG")
+            logRepository.logInfo("BACKUP", "SSAID Capture Mode deaktiviert")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            logRepository.logError("BACKUP", "Konnte Capture Mode nicht deaktivieren: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Start Monopoly GO app so the hook can capture the Android ID.
+     */
+    suspend fun startMonopolyGo(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            rootUtil.executeCommand("am start -n com.scopely.monopolygo/com.scopely.unity.ScopelyUnityActivity")
+            logRepository.logInfo("BACKUP", "Monopoly GO gestartet für SSAID Capture")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            logRepository.logError("BACKUP", "Konnte Monopoly GO nicht starten: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Read the captured SSAID from the capture file.
+     * Returns null if file doesn't exist or is invalid.
+     */
+    suspend fun readCapturedSsaid(): String? = withContext(Dispatchers.IO) {
+        try {
+            val file = File(CAPTURED_SSAID_FILE)
+            if (!file.exists()) {
+                logRepository.logWarning("BACKUP", "Captured SSAID Datei nicht gefunden")
+                return@withContext null
+            }
+
+            val content = file.readText().trim()
+            // Format: ssaid|timestamp
+            val parts = content.split("|")
+            if (parts.isEmpty() || parts[0].isBlank()) {
+                logRepository.logWarning("BACKUP", "Ungültiges Format in Captured SSAID Datei")
+                return@withContext null
+            }
+
+            val ssaid = parts[0]
+            logRepository.logInfo("BACKUP", "Captured SSAID gelesen: $ssaid")
+            ssaid
+        } catch (e: Exception) {
+            logRepository.logError("BACKUP", "Fehler beim Lesen der Captured SSAID: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Check if SSAID file exists (before starting backup).
+     */
+    fun isSsaidAvailable(): Boolean {
+        return File(SSAID_PATH).exists()
+    }
+
+    /**
+     * Complete a backup that was paused for SSAID capture.
+     * Updates the account's SSAID with the captured value.
+     */
+    suspend fun completeSsaidCapture(accountId: Long, capturedSsaid: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            // Disable capture mode
+            disableCaptureMode()
+
+            // Get the account
+            val account = accountRepository.getAccountById(accountId)
+                ?: return@withContext Result.failure(Exception("Account nicht gefunden"))
+
+            // Update the account with captured SSAID
+            val updatedAccount = account.copy(ssaid = capturedSsaid)
+            accountRepository.updateAccount(updatedAccount)
+
+            logRepository.logInfo(
+                "BACKUP",
+                "Account SSAID aktualisiert: $capturedSsaid",
+                account.fullName
+            )
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            logRepository.logError("BACKUP", "Fehler beim Aktualisieren der SSAID: ${e.message}")
+            Result.failure(e)
         }
     }
 }

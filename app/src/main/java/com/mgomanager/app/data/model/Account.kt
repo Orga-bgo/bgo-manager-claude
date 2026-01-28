@@ -36,7 +36,10 @@ data class Account(
     val backupPath: String,
     val fileOwner: String,
     val fileGroup: String,
-    val filePermissions: String
+    val filePermissions: String,
+
+    // Xposed Hook: Marks the last restored account for App Set ID replacement
+    val isLastRestored: Boolean = false
 ) {
     val fullName: String
         get() = if (prefix.isNotEmpty()) "$prefix$accountName" else accountName
