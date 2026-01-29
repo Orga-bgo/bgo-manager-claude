@@ -4,6 +4,7 @@ import com.mgomanager.app.data.model.Account
 import com.mgomanager.app.data.model.BackupResult
 import com.mgomanager.app.data.repository.AccountRepository
 import com.mgomanager.app.data.repository.LogRepository
+import com.mgomanager.app.domain.operation.BackupRunner
 import com.mgomanager.app.domain.util.FilePermissionManager
 import com.mgomanager.app.domain.util.IdExtractor
 import com.mgomanager.app.domain.util.RootUtil
@@ -29,7 +30,7 @@ class CreateBackupUseCase @Inject constructor(
     private val permissionManager: FilePermissionManager,
     private val accountRepository: AccountRepository,
     private val logRepository: LogRepository
-) {
+) : BackupRunner {
 
     companion object {
         const val MGO_DATA_PATH = "/data/data/com.scopely.monopolygo"
@@ -141,6 +142,10 @@ class CreateBackupUseCase @Inject constructor(
             logRepository.logError("BACKUP", "Backup fehlgeschlagen: ${e.message}", request.accountName, e)
             BackupResult.Failure("Backup fehlgeschlagen: ${e.message}", e)
         }
+    }
+
+    override suspend fun run(request: BackupRequest, forceDuplicate: Boolean): BackupResult {
+        return execute(request, forceDuplicate)
     }
 
     private suspend fun copyDirectory(source: String, destination: String, accountName: String) {
