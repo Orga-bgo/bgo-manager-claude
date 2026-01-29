@@ -8,7 +8,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.size
@@ -23,7 +26,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.mgomanager.app.data.model.Account
 import com.mgomanager.app.data.model.BackupResult
+import com.mgomanager.app.domain.usecase.CreateNewAccountResult
 import com.mgomanager.app.ui.components.BackupDialog
+import com.mgomanager.app.ui.components.CreateAccountDialog
 import com.mgomanager.app.ui.components.StatisticsCard
 import com.mgomanager.app.ui.navigation.Screen
 import com.mgomanager.app.ui.theme.StatusGreen
@@ -37,6 +42,7 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var sortDropdownExpanded by remember { mutableStateOf(false) }
+    var fabMenuExpanded by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.fillMaxSize()
@@ -251,13 +257,51 @@ fun HomeScreen(
                 }
             }
 
-            // FAB
-            FloatingActionButton(
-                onClick = { viewModel.showBackupDialog() },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
+            // FAB with dropdown menu
+            Box(
+                modifier = Modifier.align(Alignment.BottomEnd)
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Neues Backup")
+                FloatingActionButton(
+                    onClick = { fabMenuExpanded = true }
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Aktionen")
+                }
+
+                // Dropdown menu for FAB
+                DropdownMenu(
+                    expanded = fabMenuExpanded,
+                    onDismissRequest = { fabMenuExpanded = false },
+                    offset = DpOffset(0.dp, (-56).dp)
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Account sichern") },
+                        onClick = {
+                            fabMenuExpanded = false
+                            viewModel.showBackupDialog()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Backup,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Neuen Account erstellen") },
+                        onClick = {
+                            fabMenuExpanded = false
+                            viewModel.showCreateAccountDialog()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.PersonAdd,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    )
+                }
             }
         }
     }
@@ -391,6 +435,69 @@ fun HomeScreen(
                 }
             }
         )
+    }
+
+    // Show create account dialog
+    if (uiState.showCreateAccountDialog) {
+        CreateAccountDialog(
+            onDismiss = { viewModel.hideCreateAccountDialog() },
+            onConfirm = { accountName ->
+                viewModel.createNewAccount(accountName)
+            },
+            isLoading = uiState.isCreatingAccount,
+            progress = uiState.createAccountProgress,
+            errorMessage = uiState.createAccountError
+        )
+    }
+
+    // Show create account result
+    uiState.createAccountResult?.let { result ->
+        when (result) {
+            is CreateNewAccountResult.Success -> {
+                AlertDialog(
+                    onDismissRequest = { viewModel.clearCreateAccountResult() },
+                    title = { Text("Account erstellt!") },
+                    text = {
+                        Text("Account '${result.accountName}' wurde erfolgreich erstellt. Monopoly Go wurde gestartet.")
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                viewModel.clearCreateAccountResult()
+                                // Navigate to detail screen for the new account
+                                navController.navigate(Screen.Detail.createRoute(result.accountId))
+                            }
+                        ) {
+                            Text("Zum Account")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { viewModel.clearCreateAccountResult() }) {
+                            Text("OK")
+                        }
+                    }
+                )
+            }
+            is CreateNewAccountResult.Failure -> {
+                AlertDialog(
+                    onDismissRequest = { viewModel.clearCreateAccountResult() },
+                    title = { Text("Fehler") },
+                    text = { Text(result.error) },
+                    confirmButton = {
+                        TextButton(onClick = { viewModel.clearCreateAccountResult() }) {
+                            Text("OK")
+                        }
+                    }
+                )
+            }
+            is CreateNewAccountResult.ValidationError -> {
+                // Handled inline in the dialog
+                viewModel.clearCreateAccountResult()
+            }
+            is CreateNewAccountResult.Progress -> {
+                // Progress is handled by the dialog itself, not as a final result
+            }
+        }
     }
 }
 

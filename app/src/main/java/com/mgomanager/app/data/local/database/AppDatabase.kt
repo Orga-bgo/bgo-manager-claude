@@ -16,7 +16,7 @@ import com.mgomanager.app.data.local.database.entities.LogEntity
  */
 @Database(
     entities = [AccountEntity::class, LogEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -41,6 +41,20 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
+         * Migration from version 2 to 3: Add extended IDs for "Create New Account" feature
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE accounts ADD COLUMN deviceName TEXT DEFAULT NULL")
+                database.execSQL("ALTER TABLE accounts ADD COLUMN androidId TEXT DEFAULT NULL")
+                database.execSQL("ALTER TABLE accounts ADD COLUMN appSetIdApp TEXT DEFAULT NULL")
+                database.execSQL("ALTER TABLE accounts ADD COLUMN appSetIdDev TEXT DEFAULT NULL")
+                database.execSQL("ALTER TABLE accounts ADD COLUMN gsfId TEXT DEFAULT NULL")
+                database.execSQL("ALTER TABLE accounts ADD COLUMN generatedGaid TEXT DEFAULT NULL")
+            }
+        }
+
+        /**
          * Get singleton instance for Xposed hook access.
          * This bypasses Hilt DI for use in Xposed context where DI is not available.
          */
@@ -55,7 +69,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .allowMainThreadQueries() // Required for Xposed synchronous access
                     .build()
 

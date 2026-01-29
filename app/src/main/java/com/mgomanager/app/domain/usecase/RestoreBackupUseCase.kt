@@ -112,13 +112,30 @@ class RestoreBackupUseCase @Inject constructor(
             // Step 9: Write App Set ID to shared file for Xposed hook access
             // The hook runs in Monopoly GO's process and reads from /data/local/tmp/
             // Note: SSAID is now handled via settings_ssaid.xml modification (no hook needed)
-            writeSharedHookFile(account.appSetId, account.ssaid, account.fullName)
-
-            logRepository.logInfo(
-                "RESTORE",
-                "Xposed Hook bereitgestellt - App Set ID: ${account.appSetId} (SSAID via settings_ssaid.xml)",
-                account.fullName
-            )
+            // Use extended format if account has generated IDs (from "Create New Account")
+            if (account.androidId != null && account.deviceName != null) {
+                writeExtendedHookFile(
+                    appSetId = account.appSetIdApp ?: account.appSetId,
+                    ssaid = account.androidId,
+                    deviceName = account.deviceName,
+                    gsfId = account.gsfId,
+                    gaid = account.generatedGaid,
+                    appSetIdDev = account.appSetIdDev,
+                    accountName = account.fullName
+                )
+                logRepository.logInfo(
+                    "RESTORE",
+                    "Xposed Hook (extended) bereitgestellt - AppSetId: ${account.appSetIdApp}, DeviceName: ${account.deviceName}",
+                    account.fullName
+                )
+            } else {
+                writeSharedHookFile(account.appSetId, account.ssaid, account.fullName)
+                logRepository.logInfo(
+                    "RESTORE",
+                    "Xposed Hook bereitgestellt - App Set ID: ${account.appSetId} (SSAID via settings_ssaid.xml)",
+                    account.fullName
+                )
+            }
 
             logRepository.logInfo("RESTORE", "Restore erfolgreich abgeschlossen", account.fullName)
             RestoreResult.Success(account.fullName)
@@ -151,20 +168,26 @@ class RestoreBackupUseCase @Inject constructor(
      * Write App Set ID to a shared file that the Xposed hook can read.
      * Uses /data/local/tmp/ which is world-readable and avoids SQLite WAL issues.
      *
-     * Format: appSetId|ssaid|accountName|timestamp
-     * Note: SSAID is included for backward compatibility but is no longer used by the hook.
-     *       SSAID is now written directly to settings_ssaid.xml via SsaidManager.
+     * Old format: appSetId|ssaid|accountName|timestamp
+     * New extended format: appSetId|ssaid|deviceName|gsfId|gaid|appSetIdDev|accountName|timestamp
      *
      * The hook uses:
-     * - appSetId for App Set ID replacement only
+     * - appSetId for App Set ID replacement
+     * - deviceName for device name spoofing (new accounts only)
+     * - gsfId for GSF ID spoofing (new accounts only)
+     * - gaid for Google Advertising ID spoofing (new accounts only)
+     * - appSetIdDev for Developer App Set ID (new accounts only)
      */
     private suspend fun writeSharedHookFile(appSetId: String, ssaid: String, accountName: String) {
         try {
             val timestamp = System.currentTimeMillis()
             val content = "$appSetId|$ssaid|$accountName|$timestamp"
 
-            // Write file using root (echo with heredoc to handle special characters)
-            rootUtil.executeCommand("echo '$content' > $XPOSED_SHARED_FILE")
+            // Escape single quotes for shell command
+            val escapedContent = content.replace("'", "'\\''")
+
+            // Write file using root
+            rootUtil.executeCommand("echo '$escapedContent' > $XPOSED_SHARED_FILE")
 
             // Set permissions to 644 (world-readable)
             rootUtil.executeCommand("chmod 644 $XPOSED_SHARED_FILE")
@@ -178,6 +201,54 @@ class RestoreBackupUseCase @Inject constructor(
             logRepository.logWarning(
                 "RESTORE",
                 "Konnte Xposed shared file nicht schreiben: ${e.message}"
+            )
+        }
+    }
+
+    /**
+     * Write extended IDs to a shared file for new accounts with generated IDs.
+     *
+     * Extended format: appSetId|ssaid|deviceName|gsfId|gaid|appSetIdDev|accountName|timestamp
+     */
+    private suspend fun writeExtendedHookFile(
+        appSetId: String,
+        ssaid: String,
+        deviceName: String?,
+        gsfId: String?,
+        gaid: String?,
+        appSetIdDev: String?,
+        accountName: String
+    ) {
+        try {
+            val timestamp = System.currentTimeMillis()
+            val content = listOf(
+                appSetId,
+                ssaid,
+                deviceName ?: "",
+                gsfId ?: "",
+                gaid ?: "",
+                appSetIdDev ?: "",
+                accountName,
+                timestamp.toString()
+            ).joinToString("|")
+
+            // Escape single quotes for shell command
+            val escapedContent = content.replace("'", "'\\''")
+
+            // Write file using root
+            rootUtil.executeCommand("echo '$escapedContent' > $XPOSED_SHARED_FILE")
+
+            // Set permissions to 644 (world-readable)
+            rootUtil.executeCommand("chmod 644 $XPOSED_SHARED_FILE")
+
+            logRepository.logInfo(
+                "RESTORE",
+                "Xposed extended file geschrieben (AppSetId: $appSetId, DeviceName: $deviceName)"
+            )
+        } catch (e: Exception) {
+            logRepository.logWarning(
+                "RESTORE",
+                "Konnte Xposed extended file nicht schreiben: ${e.message}"
             )
         }
     }
