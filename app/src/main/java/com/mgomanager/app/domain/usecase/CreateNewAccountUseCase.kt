@@ -6,9 +6,10 @@ import com.mgomanager.app.data.repository.AccountRepository
 import com.mgomanager.app.data.repository.LogRepository
 import com.mgomanager.app.domain.util.IdGenerator
 import com.mgomanager.app.domain.util.RootUtil
-import com.mgomanager.app.domain.util.SsaidManager
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import javax.inject.Inject
 
 /**
@@ -20,12 +21,24 @@ data class CreateNewAccountRequest(
 )
 
 /**
+ * Progress step during account creation.
+ */
+data class CreateAccountProgress(
+    val step: Int,
+    val totalSteps: Int,
+    val message: String
+) {
+    val percentage: Int get() = ((step.toFloat() / totalSteps) * 100).toInt()
+}
+
+/**
  * Result of creating a new account.
  */
 sealed class CreateNewAccountResult {
     data class Success(val accountId: Long, val accountName: String) : CreateNewAccountResult()
     data class Failure(val error: String, val exception: Exception? = null) : CreateNewAccountResult()
     data class ValidationError(val error: String) : CreateNewAccountResult()
+    data class Progress(val progress: CreateAccountProgress) : CreateNewAccountResult()
 }
 
 /**
@@ -33,12 +46,14 @@ sealed class CreateNewAccountResult {
  *
  * This clears existing game data and generates fresh device identifiers
  * that will be spoofed by the LSPosed hooks when the game starts.
+ *
+ * Note: Android ID (SSAID) spoofing is handled entirely via LSPosed hooks.
+ * No system settings_ssaid.xml modification is needed.
  */
 class CreateNewAccountUseCase @Inject constructor(
     private val rootUtil: RootUtil,
     private val accountRepository: AccountRepository,
-    private val logRepository: LogRepository,
-    private val ssaidManager: SsaidManager
+    private val logRepository: LogRepository
 ) {
 
     companion object {
@@ -54,74 +69,71 @@ class CreateNewAccountUseCase @Inject constructor(
         const val MIN_NAME_LENGTH = 3
         const val MAX_NAME_LENGTH = 30
         val NAME_PATTERN = Regex("^[a-zA-Z0-9_-]+$")
+
+        // Progress steps
+        private const val TOTAL_STEPS = 7
     }
 
     /**
-     * Execute the "Create New Account" operation.
+     * Execute the "Create New Account" operation with progress reporting.
      *
      * Steps:
-     * 1. Validate account name
-     * 2. Check root access
-     * 3. Force-stop Monopoly Go
-     * 4. Clear game data (shared_prefs and cache)
-     * 5. Generate all new IDs
-     * 6. Write SSAID to system settings
-     * 7. Save account to database
-     * 8. Write hook data file for LSPosed
-     * 9. Start Monopoly Go
+     * 1. Validate account name & check root
+     * 2. Force-stop Monopoly Go
+     * 3. Clear game data (shared_prefs and cache)
+     * 4. Generate all new IDs
+     * 5. Save account to database
+     * 6. Write hook data file for LSPosed
+     * 7. Start Monopoly Go
      */
-    suspend fun execute(request: CreateNewAccountRequest): CreateNewAccountResult = withContext(Dispatchers.IO) {
+    fun executeWithProgress(request: CreateNewAccountRequest): Flow<CreateNewAccountResult> = flow {
         try {
             val fullName = "${request.prefix}${request.accountName}"
             logRepository.logInfo("CREATE_NEW", "Starte Account-Erstellung für $fullName")
 
-            // Step 1: Validate account name
+            // Step 1: Validate and check root
+            emit(CreateNewAccountResult.Progress(CreateAccountProgress(1, TOTAL_STEPS, "Validiere Eingaben...")))
+
             val validationError = validateAccountName(request.accountName)
             if (validationError != null) {
                 logRepository.logWarning("CREATE_NEW", "Validierungsfehler: $validationError")
-                return@withContext CreateNewAccountResult.ValidationError(validationError)
+                emit(CreateNewAccountResult.ValidationError(validationError))
+                return@flow
             }
 
-            // Check if account name already exists
             val existingAccount = accountRepository.getAccountByName(fullName)
             if (existingAccount != null) {
                 logRepository.logWarning("CREATE_NEW", "Account existiert bereits: $fullName")
-                return@withContext CreateNewAccountResult.ValidationError("Account '$fullName' existiert bereits")
+                emit(CreateNewAccountResult.ValidationError("Account '$fullName' existiert bereits"))
+                return@flow
             }
 
-            // Step 2: Check root access
             if (!rootUtil.requestRootAccess()) {
                 logRepository.logError("CREATE_NEW", "Root-Zugriff verweigert")
-                return@withContext CreateNewAccountResult.Failure("Root-Zugriff erforderlich")
+                emit(CreateNewAccountResult.Failure("Root-Zugriff erforderlich"))
+                return@flow
             }
             logRepository.logInfo("CREATE_NEW", "Root-Zugriff bestätigt", fullName)
 
-            // Step 3: Force stop Monopoly Go
+            // Step 2: Force stop Monopoly Go
+            emit(CreateNewAccountResult.Progress(CreateAccountProgress(2, TOTAL_STEPS, "Stoppe Monopoly Go...")))
             rootUtil.forceStopMonopolyGo().getOrElse {
                 logRepository.logWarning("CREATE_NEW", "Konnte Monopoly Go nicht stoppen: ${it.message}", fullName)
             }
             logRepository.logInfo("CREATE_NEW", "Monopoly Go gestoppt", fullName)
 
-            // Step 4: Clear game data
+            // Step 3: Clear game data
+            emit(CreateNewAccountResult.Progress(CreateAccountProgress(3, TOTAL_STEPS, "Loesche Spieldaten...")))
             clearGameData(fullName)
             logRepository.logInfo("CREATE_NEW", "Spieldaten gelöscht", fullName)
 
-            // Step 5: Generate all new IDs
+            // Step 4: Generate all new IDs
+            emit(CreateNewAccountResult.Progress(CreateAccountProgress(4, TOTAL_STEPS, "Generiere neue IDs...")))
             val generatedIds = IdGenerator.generateAllIds(request.accountName)
             logRepository.logInfo("CREATE_NEW", "IDs generiert - AndroidId: ${generatedIds.androidId}, AppSetId: ${generatedIds.appSetIdApp}", fullName)
 
-            // Step 6: Write SSAID to system settings
-            val ssaidSuccess = ssaidManager.setAndroidIdForPackage(
-                packageName = MGO_PACKAGE,
-                androidId = generatedIds.androidId
-            )
-            if (ssaidSuccess) {
-                logRepository.logInfo("CREATE_NEW", "SSAID erfolgreich geschrieben: ${generatedIds.androidId}", fullName)
-            } else {
-                logRepository.logWarning("CREATE_NEW", "SSAID konnte nicht geschrieben werden, Hook wird verwendet", fullName)
-            }
-
-            // Step 7: Save account to database
+            // Step 5: Save account to database
+            emit(CreateNewAccountResult.Progress(CreateAccountProgress(5, TOTAL_STEPS, "Speichere Account...")))
             val now = System.currentTimeMillis()
             val account = Account(
                 accountName = request.accountName,
@@ -158,22 +170,24 @@ class CreateNewAccountUseCase @Inject constructor(
             // Mark this account as last restored (clears flag from others)
             accountRepository.markAsLastRestored(accountId)
 
-            // Step 8: Write hook data file
+            // Step 6: Write hook data file
+            emit(CreateNewAccountResult.Progress(CreateAccountProgress(6, TOTAL_STEPS, "Schreibe Hook-Daten...")))
             writeHookDataFile(generatedIds, request.accountName)
             logRepository.logInfo("CREATE_NEW", "Hook-Datei geschrieben", fullName)
 
-            // Step 9: Start Monopoly Go
+            // Step 7: Start Monopoly Go
+            emit(CreateNewAccountResult.Progress(CreateAccountProgress(7, TOTAL_STEPS, "Starte Monopoly Go...")))
             startMonopolyGo()
             logRepository.logInfo("CREATE_NEW", "Monopoly Go gestartet", fullName)
 
             logRepository.logInfo("CREATE_NEW", "Account-Erstellung erfolgreich abgeschlossen", fullName)
-            CreateNewAccountResult.Success(accountId, fullName)
+            emit(CreateNewAccountResult.Success(accountId, fullName))
 
         } catch (e: Exception) {
             logRepository.logError("CREATE_NEW", "Account-Erstellung fehlgeschlagen: ${e.message}", null, e)
-            CreateNewAccountResult.Failure("Account-Erstellung fehlgeschlagen: ${e.message}", e)
+            emit(CreateNewAccountResult.Failure("Account-Erstellung fehlgeschlagen: ${e.message}", e))
         }
-    }
+    }.flowOn(Dispatchers.IO)
 
     /**
      * Validate account name.
@@ -210,6 +224,13 @@ class CreateNewAccountUseCase @Inject constructor(
      * Write the hook data file for LSPosed.
      *
      * Extended format: appSetId|ssaid|deviceName|gsfId|gaid|appSetIdDev|accountName|timestamp
+     *
+     * The LSPosed hook reads this file and spoofs all device identifiers including:
+     * - App Set ID
+     * - Android ID (SSAID)
+     * - Device Name
+     * - GSF ID
+     * - Google Advertising ID (GAID)
      */
     private suspend fun writeHookDataFile(
         ids: com.mgomanager.app.domain.util.GeneratedIds,

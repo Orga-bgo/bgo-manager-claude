@@ -222,7 +222,7 @@ fun DetailScreen(
                         Spacer(modifier = Modifier.height(12.dp))
 
                         Text(
-                            text = "SSAID",
+                            text = "SSAID / ANDROID ID",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
@@ -248,7 +248,7 @@ fun DetailScreen(
                         Spacer(modifier = Modifier.height(12.dp))
 
                         Text(
-                            text = "DEVICE ID",
+                            text = "DEVICE TOKEN",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
@@ -270,6 +270,114 @@ fun DetailScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             fontFamily = FontFamily.Monospace
                         )
+                    }
+                }
+
+                // Extended IDs card (only shown if account was created with "Neuen Account erstellen")
+                if (account.deviceName != null || account.androidId != null) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            Text(
+                                text = "Generierte IDs (Hook)",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Diese IDs werden vom LSPosed Hook verwendet",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            account.deviceName?.let { deviceName ->
+                                Text(
+                                    text = "DEVICE NAME",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                                Text(
+                                    text = deviceName,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                            }
+
+                            account.androidId?.let { androidId ->
+                                Text(
+                                    text = "ANDROID ID (generiert)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                                Text(
+                                    text = androidId,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                            }
+
+                            account.appSetIdApp?.let { appSetIdApp ->
+                                Text(
+                                    text = "APP SET ID (App)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                                Text(
+                                    text = appSetIdApp,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                            }
+
+                            account.appSetIdDev?.let { appSetIdDev ->
+                                Text(
+                                    text = "APP SET ID (Developer)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                                Text(
+                                    text = appSetIdDev,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                            }
+
+                            account.gsfId?.let { gsfId ->
+                                Text(
+                                    text = "GSF ID",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                                Text(
+                                    text = gsfId,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                            }
+
+                            account.generatedGaid?.let { generatedGaid ->
+                                Text(
+                                    text = "GAID (generiert)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                                Text(
+                                    text = generatedGaid,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
                     }
                 }
 

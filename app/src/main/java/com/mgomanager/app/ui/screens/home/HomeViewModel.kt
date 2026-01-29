@@ -9,6 +9,7 @@ import com.mgomanager.app.data.model.RestoreResult
 import com.mgomanager.app.data.repository.AccountRepository
 import com.mgomanager.app.data.repository.BackupRepository
 import com.mgomanager.app.domain.usecase.BackupRequest
+import com.mgomanager.app.domain.usecase.CreateAccountProgress
 import com.mgomanager.app.domain.usecase.CreateNewAccountRequest
 import com.mgomanager.app.domain.usecase.CreateNewAccountResult
 import com.mgomanager.app.domain.usecase.CreateNewAccountUseCase
@@ -39,7 +40,8 @@ data class HomeUiState(
     val showCreateAccountDialog: Boolean = false,
     val createAccountResult: CreateNewAccountResult? = null,
     val isCreatingAccount: Boolean = false,
-    val createAccountError: String? = null
+    val createAccountError: String? = null,
+    val createAccountProgress: CreateAccountProgress? = null
 )
 
 data class DuplicateUserIdInfo(
@@ -390,7 +392,8 @@ class HomeViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     isCreatingAccount = true,
-                    createAccountError = null
+                    createAccountError = null,
+                    createAccountProgress = null
                 )
             }
 
@@ -400,32 +403,40 @@ class HomeViewModel @Inject constructor(
                 prefix = prefix
             )
 
-            val result = createNewAccountUseCase.execute(request)
-
-            when (result) {
-                is CreateNewAccountResult.Success -> {
-                    _uiState.update {
-                        it.copy(
-                            isCreatingAccount = false,
-                            showCreateAccountDialog = false,
-                            createAccountResult = result
-                        )
+            createNewAccountUseCase.executeWithProgress(request).collect { result ->
+                when (result) {
+                    is CreateNewAccountResult.Progress -> {
+                        _uiState.update {
+                            it.copy(createAccountProgress = result.progress)
+                        }
                     }
-                }
-                is CreateNewAccountResult.ValidationError -> {
-                    _uiState.update {
-                        it.copy(
-                            isCreatingAccount = false,
-                            createAccountError = result.error
-                        )
+                    is CreateNewAccountResult.Success -> {
+                        _uiState.update {
+                            it.copy(
+                                isCreatingAccount = false,
+                                showCreateAccountDialog = false,
+                                createAccountResult = result,
+                                createAccountProgress = null
+                            )
+                        }
                     }
-                }
-                is CreateNewAccountResult.Failure -> {
-                    _uiState.update {
-                        it.copy(
-                            isCreatingAccount = false,
-                            createAccountError = result.error
-                        )
+                    is CreateNewAccountResult.ValidationError -> {
+                        _uiState.update {
+                            it.copy(
+                                isCreatingAccount = false,
+                                createAccountError = result.error,
+                                createAccountProgress = null
+                            )
+                        }
+                    }
+                    is CreateNewAccountResult.Failure -> {
+                        _uiState.update {
+                            it.copy(
+                                isCreatingAccount = false,
+                                createAccountError = result.error,
+                                createAccountProgress = null
+                            )
+                        }
                     }
                 }
             }

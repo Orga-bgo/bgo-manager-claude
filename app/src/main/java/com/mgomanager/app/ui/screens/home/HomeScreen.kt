@@ -445,6 +445,7 @@ fun HomeScreen(
                 viewModel.createNewAccount(accountName)
             },
             isLoading = uiState.isCreatingAccount,
+            progress = uiState.createAccountProgress,
             errorMessage = uiState.createAccountError
         )
     }
@@ -492,6 +493,9 @@ fun HomeScreen(
             is CreateNewAccountResult.ValidationError -> {
                 // Handled inline in the dialog
                 viewModel.clearCreateAccountResult()
+            }
+            is CreateNewAccountResult.Progress -> {
+                // Progress is handled by the dialog itself, not as a final result
             }
         }
     }
