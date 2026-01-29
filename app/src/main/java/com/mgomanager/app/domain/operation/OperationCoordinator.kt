@@ -235,7 +235,12 @@ class OperationCoordinator @Inject constructor(
                 }
             }
             is PreflightResult.Failure -> {
-                val failed = failStep(state, OperationStepId.PRECHECK, result.error.detail, emitState)
+                val failed = failStep(
+                    state,
+                    OperationStepId.PRECHECK,
+                    emitState,
+                    detail = result.error.detail
+                )
                 val canceled = updater.cancelPendingSteps(failed)
                 val finalState = updater.finalize(canceled, OperationOverallStatus.FAILURE, error = result.error)
                 logger.logOperationEnd(state.type, OperationOverallStatus.FAILURE)
@@ -283,7 +288,12 @@ class OperationCoordinator @Inject constructor(
             OperationStepId.READ_IDS
         )
         updated = completeSteps(updated, successSteps, emitState)
-        updated = failStep(updated, OperationStepId.DB_UPDATE, "duplicate_user_id", emitState)
+        updated = failStep(
+            updated,
+            OperationStepId.DB_UPDATE,
+            emitState,
+            detail = "duplicate_user_id"
+        )
         updated = updater.cancelPendingSteps(updated)
         val error = OperationError(
             code = OperationErrorCode.DuplicateUserId,
@@ -317,7 +327,12 @@ class OperationCoordinator @Inject constructor(
         error: OperationError,
         emitState: StateEmitter
     ): OperationState {
-        var updated = failStep(state, stepId, error.detail, emitState)
+        var updated = failStep(
+            state,
+            stepId,
+            emitState,
+            detail = error.detail
+        )
         updated = updater.cancelPendingSteps(updated)
         val finalState = updater.finalize(updated, OperationOverallStatus.FAILURE, error = error)
         logger.logOperationEnd(state.type, OperationOverallStatus.FAILURE)
