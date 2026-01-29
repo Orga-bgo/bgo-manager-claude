@@ -9,9 +9,9 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
 
 /**
  * Main Xposed hook class for Monopoly GO.
- * Intercepts App Set ID, GAID, GSF ID, and Device Name requests.
+ * Intercepts App Set ID, SSAID, GAID, GSF ID, and Device Name requests.
  *
- * Note: SSAID (Android ID) is spoofed via the hook file written by MGO Manager.
+ * Note: SSAID (Android ID) is spoofed via Settings.Secure hooks using the hook file.
  *
  * Entry point defined in: assets/xposed_init
  */
@@ -40,6 +40,10 @@ class MonopolyGoHook : IXposedHookLoadPackage {
                 hookDeviceName(lpparam)
                 HookLogger.log("Device Name hook installed successfully")
 
+                // Hook SSAID (Android ID)
+                hookAndroidId(lpparam)
+                HookLogger.log("SSAID hook installed successfully")
+
                 // Hook GAID (Google Advertising ID)
                 hookGoogleAdvertisingId(lpparam)
                 HookLogger.log("GAID hook installed successfully")
@@ -52,9 +56,6 @@ class MonopolyGoHook : IXposedHookLoadPackage {
             HookLogger.logError("Failed to install hooks", e)
         }
     }
-
-    // Note: hookSettingsSecure() has been removed.
-    // SSAID is now spoofed via the hook file to avoid touching settings_ssaid.xml.
 
     /**
      * Hook AppSetIdClient.getAppSetIdInfo() to return our custom App Set ID.
@@ -237,6 +238,64 @@ class MonopolyGoHook : IXposedHookLoadPackage {
         } catch (e: Exception) {
             HookLogger.logError("Failed to create completed Task", e)
             null
+        }
+    }
+
+    // ============================================================
+    // SSAID (Android ID) Hook
+    // ============================================================
+
+    /**
+     * Hook Settings.Secure.getString to return custom SSAID.
+     */
+    private fun hookAndroidId(lpparam: LoadPackageParam) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                "android.provider.Settings\$Secure",
+                lpparam.classLoader,
+                "getString",
+                ContentResolver::class.java,
+                String::class.java,
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val key = param.args[1] as? String
+                        if (key == "android_id") {
+                            val context = AndroidAppHelper.currentApplication()
+                            val customSsaid = AppSetIdProvider.getSsaid(context)
+                            if (customSsaid != null) {
+                                val original = param.result as? String
+                                param.result = customSsaid
+                                HookLogger.log("✓ SSAID hooked: Original=$original, Replaced=$customSsaid")
+                            }
+                        }
+                    }
+                }
+            )
+
+            XposedHelpers.findAndHookMethod(
+                "android.provider.Settings\$Secure",
+                lpparam.classLoader,
+                "getStringForUser",
+                ContentResolver::class.java,
+                String::class.java,
+                Int::class.javaPrimitiveType,
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val key = param.args[1] as? String
+                        if (key == "android_id") {
+                            val context = AndroidAppHelper.currentApplication()
+                            val customSsaid = AppSetIdProvider.getSsaid(context)
+                            if (customSsaid != null) {
+                                val original = param.result as? String
+                                param.result = customSsaid
+                                HookLogger.log("✓ SSAID (for user) hooked: Original=$original, Replaced=$customSsaid")
+                            }
+                        }
+                    }
+                }
+            )
+        } catch (e: Exception) {
+            HookLogger.logError("Failed to hook SSAID", e)
         }
     }
 
