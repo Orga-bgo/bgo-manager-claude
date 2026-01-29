@@ -4,7 +4,9 @@ import com.mgomanager.app.data.model.Account
 import com.mgomanager.app.data.model.SusLevel
 import com.mgomanager.app.data.repository.AccountRepository
 import com.mgomanager.app.data.repository.LogRepository
+import com.mgomanager.app.domain.util.AccountNameValidator
 import com.mgomanager.app.domain.util.IdGenerator
+import com.mgomanager.app.domain.operation.CreateAccountRunner
 import com.mgomanager.app.domain.util.RootUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -54,7 +56,7 @@ class CreateNewAccountUseCase @Inject constructor(
     private val rootUtil: RootUtil,
     private val accountRepository: AccountRepository,
     private val logRepository: LogRepository
-) {
+) : CreateAccountRunner {
 
     companion object {
         const val MGO_PACKAGE = "com.scopely.monopolygo"
@@ -64,11 +66,6 @@ class CreateNewAccountUseCase @Inject constructor(
 
         // Shared file for Xposed hook - world-readable location
         const val XPOSED_SHARED_FILE = "/data/local/tmp/mgo_current_appsetid.txt"
-
-        // Validation constants
-        const val MIN_NAME_LENGTH = 3
-        const val MAX_NAME_LENGTH = 30
-        val NAME_PATTERN = Regex("^[a-zA-Z0-9_-]+$")
 
         // Progress steps
         private const val TOTAL_STEPS = 6
@@ -184,16 +181,20 @@ class CreateNewAccountUseCase @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
+    override fun run(request: CreateNewAccountRequest): Flow<CreateNewAccountResult> {
+        return executeWithProgress(request)
+    }
+
     /**
      * Validate account name.
      * Returns error message if invalid, null if valid.
      */
     private fun validateAccountName(name: String): String? {
-        return when {
-            name.isBlank() -> "Account-Name darf nicht leer sein"
-            name.length < MIN_NAME_LENGTH -> "Account-Name muss mindestens $MIN_NAME_LENGTH Zeichen haben"
-            name.length > MAX_NAME_LENGTH -> "Account-Name darf maximal $MAX_NAME_LENGTH Zeichen haben"
-            !NAME_PATTERN.matches(name) -> "Account-Name darf nur Buchstaben, Zahlen, _ und - enthalten"
+        return when (AccountNameValidator.validate(name)) {
+            "name_blank" -> "Account-Name darf nicht leer sein"
+            "name_too_short" -> "Account-Name muss mindestens ${AccountNameValidator.MIN_NAME_LENGTH} Zeichen haben"
+            "name_too_long" -> "Account-Name darf maximal ${AccountNameValidator.MAX_NAME_LENGTH} Zeichen haben"
+            "name_invalid_chars" -> "Account-Name darf nur Buchstaben, Zahlen, _ und - enthalten"
             else -> null
         }
     }

@@ -3,6 +3,7 @@ package com.mgomanager.app.domain.usecase
 import com.mgomanager.app.data.model.RestoreResult
 import com.mgomanager.app.data.repository.AccountRepository
 import com.mgomanager.app.data.repository.LogRepository
+import com.mgomanager.app.domain.operation.RestoreRunner
 import com.mgomanager.app.domain.util.FilePermissionManager
 import com.mgomanager.app.domain.util.RootUtil
 import kotlinx.coroutines.Dispatchers
@@ -15,7 +16,7 @@ class RestoreBackupUseCase @Inject constructor(
     private val permissionManager: FilePermissionManager,
     private val accountRepository: AccountRepository,
     private val logRepository: LogRepository
-) {
+) : RestoreRunner {
 
     companion object {
         const val MGO_DATA_PATH = "/data/data/com.scopely.monopolygo"
@@ -113,6 +114,10 @@ class RestoreBackupUseCase @Inject constructor(
             logRepository.logError("RESTORE", "Restore fehlgeschlagen: ${e.message}", null, e)
             RestoreResult.Failure("Restore fehlgeschlagen: ${e.message}", e)
         }
+    }
+
+    override suspend fun run(accountId: Long): RestoreResult {
+        return execute(accountId)
     }
 
     private fun validateBackupFiles(backupPath: String): Boolean {
