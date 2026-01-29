@@ -183,8 +183,11 @@ class RestoreBackupUseCase @Inject constructor(
             val timestamp = System.currentTimeMillis()
             val content = "$appSetId|$ssaid|$accountName|$timestamp"
 
-            // Write file using root (echo with heredoc to handle special characters)
-            rootUtil.executeCommand("echo '$content' > $XPOSED_SHARED_FILE")
+            // Escape single quotes for shell command
+            val escapedContent = content.replace("'", "'\\''")
+
+            // Write file using root
+            rootUtil.executeCommand("echo '$escapedContent' > $XPOSED_SHARED_FILE")
 
             // Set permissions to 644 (world-readable)
             rootUtil.executeCommand("chmod 644 $XPOSED_SHARED_FILE")
@@ -229,8 +232,11 @@ class RestoreBackupUseCase @Inject constructor(
                 timestamp.toString()
             ).joinToString("|")
 
+            // Escape single quotes for shell command
+            val escapedContent = content.replace("'", "'\\''")
+
             // Write file using root
-            rootUtil.executeCommand("echo '$content' > $XPOSED_SHARED_FILE")
+            rootUtil.executeCommand("echo '$escapedContent' > $XPOSED_SHARED_FILE")
 
             // Set permissions to 644 (world-readable)
             rootUtil.executeCommand("chmod 644 $XPOSED_SHARED_FILE")

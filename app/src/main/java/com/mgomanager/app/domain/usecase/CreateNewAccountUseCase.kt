@@ -248,8 +248,11 @@ class CreateNewAccountUseCase @Inject constructor(
             timestamp.toString()
         ).joinToString("|")
 
+        // Escape single quotes for shell command
+        val escapedHookData = hookData.replace("'", "'\\''")
+
         // Write file using root
-        rootUtil.executeCommand("echo '$hookData' > $XPOSED_SHARED_FILE")
+        rootUtil.executeCommand("echo '$escapedHookData' > $XPOSED_SHARED_FILE")
 
         // Set permissions to world-readable (644)
         rootUtil.executeCommand("chmod 644 $XPOSED_SHARED_FILE")
