@@ -35,7 +35,7 @@ data class CreateAccountProgress(
  * Result of creating a new account.
  */
 sealed class CreateNewAccountResult {
-    data class Success(val accountId: Long, val accountName: String) : CreateNewAccountResult()
+    data class Prepared(val accountId: Long, val accountName: String) : CreateNewAccountResult()
     data class Failure(val error: String, val exception: Exception? = null) : CreateNewAccountResult()
     data class ValidationError(val error: String) : CreateNewAccountResult()
     data class Progress(val progress: CreateAccountProgress) : CreateNewAccountResult()
@@ -71,7 +71,7 @@ class CreateNewAccountUseCase @Inject constructor(
         val NAME_PATTERN = Regex("^[a-zA-Z0-9_-]+$")
 
         // Progress steps
-        private const val TOTAL_STEPS = 7
+        private const val TOTAL_STEPS = 6
     }
 
     /**
@@ -84,7 +84,7 @@ class CreateNewAccountUseCase @Inject constructor(
      * 4. Generate all new IDs
      * 5. Save account to database
      * 6. Write hook data file for LSPosed
-     * 7. Start Monopoly Go
+     * 7. (Phase B) Start Monopoly Go and backup
      */
     fun executeWithProgress(request: CreateNewAccountRequest): Flow<CreateNewAccountResult> = flow {
         try {
@@ -175,13 +175,8 @@ class CreateNewAccountUseCase @Inject constructor(
             writeHookDataFile(generatedIds, request.accountName)
             logRepository.logInfo("CREATE_NEW", "Hook-Datei geschrieben", fullName)
 
-            // Step 7: Start Monopoly Go
-            emit(CreateNewAccountResult.Progress(CreateAccountProgress(7, TOTAL_STEPS, "Starte Monopoly Go...")))
-            startMonopolyGo()
-            logRepository.logInfo("CREATE_NEW", "Monopoly Go gestartet", fullName)
-
-            logRepository.logInfo("CREATE_NEW", "Account-Erstellung erfolgreich abgeschlossen", fullName)
-            emit(CreateNewAccountResult.Success(accountId, fullName))
+            logRepository.logInfo("CREATE_NEW", "Account-Vorbereitung erfolgreich abgeschlossen", fullName)
+            emit(CreateNewAccountResult.Prepared(accountId, fullName))
 
         } catch (e: Exception) {
             logRepository.logError("CREATE_NEW", "Account-Erstellung fehlgeschlagen: ${e.message}", null, e)
@@ -258,10 +253,4 @@ class CreateNewAccountUseCase @Inject constructor(
         rootUtil.executeCommand("chmod 644 $XPOSED_SHARED_FILE")
     }
 
-    /**
-     * Start Monopoly Go app.
-     */
-    private suspend fun startMonopolyGo() {
-        rootUtil.executeCommand("am start -n $MGO_PACKAGE/com.scopely.unity.ScopelyUnityActivity")
-    }
 }

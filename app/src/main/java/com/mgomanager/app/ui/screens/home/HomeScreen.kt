@@ -26,7 +26,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.mgomanager.app.data.model.Account
 import com.mgomanager.app.data.model.BackupResult
-import com.mgomanager.app.domain.usecase.CreateNewAccountResult
 import com.mgomanager.app.ui.components.BackupDialog
 import com.mgomanager.app.ui.components.CreateAccountDialog
 import com.mgomanager.app.ui.components.StatisticsCard
@@ -360,62 +359,7 @@ fun HomeScreen(
             is BackupResult.DuplicateUserId -> {
                 // This case is handled by duplicateUserIdDialog
             }
-            is BackupResult.NeedsSsaidFallback -> {
-                // Show SSAID fallback dialog
-                viewModel.clearBackupResult()
-                viewModel.startSsaidFallback()
-            }
         }
-    }
-
-    // Show SSAID fallback countdown dialog
-    uiState.ssaidFallbackState?.let { state ->
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissSsaidFallback() },
-            title = { Text("Android ID nicht gefunden") },
-            text = {
-                Column {
-                    when {
-                        state.error != null -> {
-                            Text(state.error)
-                        }
-                        state.capturedSsaid != null -> {
-                            Text("Android ID erfolgreich erfasst!")
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = state.capturedSsaid,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = StatusGreen
-                            )
-                        }
-                        state.isCapturing -> {
-                            Text("Erfasse Android ID...")
-                            Spacer(modifier = Modifier.height(8.dp))
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                        else -> {
-                            Text("Nutze Fallback. Monopoly Go startet in ${state.countdown}...")
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                if (state.capturedSsaid != null || state.error != null) {
-                    TextButton(onClick = { viewModel.dismissSsaidFallback() }) {
-                        Text("OK")
-                    }
-                }
-            },
-            dismissButton = {
-                if (state.capturedSsaid == null && state.error == null) {
-                    TextButton(onClick = { viewModel.dismissSsaidFallback() }) {
-                        Text("Abbrechen")
-                    }
-                }
-            }
-        )
     }
 
     // Show duplicate User ID dialog
@@ -444,60 +388,19 @@ fun HomeScreen(
             onConfirm = { accountName ->
                 viewModel.createNewAccount(accountName)
             },
+            onStartBackup = { viewModel.startCreateAccountBackup() },
+            onNavigateToAccount = { accountId ->
+                viewModel.hideCreateAccountDialog()
+                navController.navigate(Screen.Detail.createRoute(accountId))
+            },
             isLoading = uiState.isCreatingAccount,
             progress = uiState.createAccountProgress,
-            errorMessage = uiState.createAccountError
+            errorMessage = uiState.createAccountError,
+            preparedAccount = uiState.createAccountPrepared,
+            isBackingUp = uiState.isCreatingAccountBackup,
+            backupProgress = uiState.createAccountBackupProgress,
+            backupResult = uiState.createAccountBackupResult
         )
-    }
-
-    // Show create account result
-    uiState.createAccountResult?.let { result ->
-        when (result) {
-            is CreateNewAccountResult.Success -> {
-                AlertDialog(
-                    onDismissRequest = { viewModel.clearCreateAccountResult() },
-                    title = { Text("Account erstellt!") },
-                    text = {
-                        Text("Account '${result.accountName}' wurde erfolgreich erstellt. Monopoly Go wurde gestartet.")
-                    },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                viewModel.clearCreateAccountResult()
-                                // Navigate to detail screen for the new account
-                                navController.navigate(Screen.Detail.createRoute(result.accountId))
-                            }
-                        ) {
-                            Text("Zum Account")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { viewModel.clearCreateAccountResult() }) {
-                            Text("OK")
-                        }
-                    }
-                )
-            }
-            is CreateNewAccountResult.Failure -> {
-                AlertDialog(
-                    onDismissRequest = { viewModel.clearCreateAccountResult() },
-                    title = { Text("Fehler") },
-                    text = { Text(result.error) },
-                    confirmButton = {
-                        TextButton(onClick = { viewModel.clearCreateAccountResult() }) {
-                            Text("OK")
-                        }
-                    }
-                )
-            }
-            is CreateNewAccountResult.ValidationError -> {
-                // Handled inline in the dialog
-                viewModel.clearCreateAccountResult()
-            }
-            is CreateNewAccountResult.Progress -> {
-                // Progress is handled by the dialog itself, not as a final result
-            }
-        }
     }
 }
 

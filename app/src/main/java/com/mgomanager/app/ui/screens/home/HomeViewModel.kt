@@ -10,11 +10,13 @@ import com.mgomanager.app.data.repository.AccountRepository
 import com.mgomanager.app.data.repository.BackupRepository
 import com.mgomanager.app.domain.usecase.BackupRequest
 import com.mgomanager.app.domain.usecase.CreateAccountProgress
+import com.mgomanager.app.domain.usecase.CreateAccountBackupProgress
+import com.mgomanager.app.domain.usecase.CreateNewAccountBackupResult
+import com.mgomanager.app.domain.usecase.CreateNewAccountBackupUseCase
 import com.mgomanager.app.domain.usecase.CreateNewAccountRequest
 import com.mgomanager.app.domain.usecase.CreateNewAccountResult
 import com.mgomanager.app.domain.usecase.CreateNewAccountUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -31,17 +33,18 @@ data class HomeUiState(
     val showRestoreConfirm: Long? = null, // Account ID to restore
     val showRestoreSuccessDialog: Boolean = false,
     val duplicateUserIdDialog: DuplicateUserIdInfo? = null, // For duplicate check
-    // SSAID Fallback
-    val ssaidFallbackState: SsaidFallbackState? = null,
     // Sorting
     val sortMode: String = "lastPlayed",
     val accountPrefix: String = "MGO_",
     // Create New Account
     val showCreateAccountDialog: Boolean = false,
-    val createAccountResult: CreateNewAccountResult? = null,
+    val createAccountPrepared: CreateNewAccountResult.Prepared? = null,
     val isCreatingAccount: Boolean = false,
     val createAccountError: String? = null,
-    val createAccountProgress: CreateAccountProgress? = null
+    val createAccountProgress: CreateAccountProgress? = null,
+    val isCreatingAccountBackup: Boolean = false,
+    val createAccountBackupProgress: CreateAccountBackupProgress? = null,
+    val createAccountBackupResult: CreateNewAccountBackupResult? = null
 )
 
 data class DuplicateUserIdInfo(
@@ -50,23 +53,13 @@ data class DuplicateUserIdInfo(
     val pendingRequest: BackupRequest
 )
 
-/**
- * State for SSAID fallback countdown dialog.
- * Shown when settings_ssaid.xml is missing during backup.
- */
-data class SsaidFallbackState(
-    val countdown: Int = 5,
-    val isCapturing: Boolean = false,
-    val capturedSsaid: String? = null,
-    val error: String? = null
-)
-
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val accountRepository: AccountRepository,
     private val backupRepository: BackupRepository,
     private val settingsDataStore: SettingsDataStore,
-    private val createNewAccountUseCase: CreateNewAccountUseCase
+    private val createNewAccountUseCase: CreateNewAccountUseCase,
+    private val createNewAccountBackupUseCase: CreateNewAccountBackupUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -262,99 +255,6 @@ class HomeViewModel @Inject constructor(
     }
 
     // ============================================================
-    // SSAID Fallback (when settings_ssaid.xml is missing)
-    // ============================================================
-
-    /**
-     * Start the SSAID fallback flow with countdown.
-     * Shows dialog: "Android ID nicht gefunden - nutze Fallback. Monopoly Go startet in 5 4 3 2 1..."
-     */
-    fun startSsaidFallback() {
-        viewModelScope.launch {
-            // Show countdown dialog
-            _uiState.update { it.copy(ssaidFallbackState = SsaidFallbackState(countdown = 5)) }
-
-            // Enable capture mode
-            backupRepository.enableSsaidCaptureMode()
-
-            // Countdown from 5 to 1
-            for (i in 5 downTo 1) {
-                _uiState.update {
-                    it.copy(ssaidFallbackState = it.ssaidFallbackState?.copy(countdown = i))
-                }
-                delay(1000)
-            }
-
-            // Start Monopoly GO
-            _uiState.update {
-                it.copy(ssaidFallbackState = it.ssaidFallbackState?.copy(isCapturing = true))
-            }
-
-            backupRepository.startMonopolyGo()
-
-            // Wait a bit for the app to start and hook to capture
-            delay(3000)
-
-            // Try to read the captured SSAID
-            val capturedSsaid = backupRepository.readCapturedSsaid()
-
-            if (capturedSsaid != null) {
-                _uiState.update {
-                    it.copy(ssaidFallbackState = it.ssaidFallbackState?.copy(
-                        isCapturing = false,
-                        capturedSsaid = capturedSsaid
-                    ))
-                }
-            } else {
-                // Retry a few times
-                var retries = 5
-                var ssaid: String? = null
-                while (retries > 0 && ssaid == null) {
-                    delay(2000)
-                    ssaid = backupRepository.readCapturedSsaid()
-                    retries--
-                }
-
-                if (ssaid != null) {
-                    _uiState.update {
-                        it.copy(ssaidFallbackState = it.ssaidFallbackState?.copy(
-                            isCapturing = false,
-                            capturedSsaid = ssaid
-                        ))
-                    }
-                } else {
-                    _uiState.update {
-                        it.copy(ssaidFallbackState = it.ssaidFallbackState?.copy(
-                            isCapturing = false,
-                            error = "Android ID konnte nicht erfasst werden"
-                        ))
-                    }
-                }
-            }
-
-            // Disable capture mode
-            backupRepository.disableSsaidCaptureMode()
-        }
-    }
-
-    /**
-     * Dismiss the SSAID fallback dialog.
-     */
-    fun dismissSsaidFallback() {
-        viewModelScope.launch {
-            backupRepository.disableSsaidCaptureMode()
-        }
-        _uiState.update { it.copy(ssaidFallbackState = null) }
-    }
-
-    /**
-     * Get the captured SSAID value (for use when completing backup).
-     */
-    fun getCapturedSsaid(): String? {
-        return _uiState.value.ssaidFallbackState?.capturedSsaid
-    }
-
-    // ============================================================
     // Create New Account
     // ============================================================
 
@@ -365,7 +265,11 @@ class HomeViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 showCreateAccountDialog = true,
-                createAccountError = null
+                createAccountError = null,
+                createAccountPrepared = null,
+                createAccountBackupResult = null,
+                createAccountBackupProgress = null,
+                isCreatingAccountBackup = false
             )
         }
     }
@@ -378,7 +282,12 @@ class HomeViewModel @Inject constructor(
             it.copy(
                 showCreateAccountDialog = false,
                 createAccountError = null,
-                isCreatingAccount = false
+                isCreatingAccount = false,
+                createAccountProgress = null,
+                createAccountPrepared = null,
+                isCreatingAccountBackup = false,
+                createAccountBackupProgress = null,
+                createAccountBackupResult = null
             )
         }
     }
@@ -393,7 +302,11 @@ class HomeViewModel @Inject constructor(
                 it.copy(
                     isCreatingAccount = true,
                     createAccountError = null,
-                    createAccountProgress = null
+                    createAccountProgress = null,
+                    createAccountPrepared = null,
+                    isCreatingAccountBackup = false,
+                    createAccountBackupProgress = null,
+                    createAccountBackupResult = null
                 )
             }
 
@@ -410,12 +323,12 @@ class HomeViewModel @Inject constructor(
                             it.copy(createAccountProgress = result.progress)
                         }
                     }
-                    is CreateNewAccountResult.Success -> {
+                    is CreateNewAccountResult.Prepared -> {
                         _uiState.update {
                             it.copy(
                                 isCreatingAccount = false,
-                                showCreateAccountDialog = false,
-                                createAccountResult = result,
+                                createAccountPrepared = result,
+                                createAccountError = null,
                                 createAccountProgress = null
                             )
                         }
@@ -444,9 +357,49 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * Clear the create account result after showing success message.
+     * Start Phase B backup for a prepared account.
      */
-    fun clearCreateAccountResult() {
-        _uiState.update { it.copy(createAccountResult = null) }
+    fun startCreateAccountBackup() {
+        val prepared = _uiState.value.createAccountPrepared ?: return
+        if (_uiState.value.isCreatingAccountBackup) return
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isCreatingAccountBackup = true,
+                    createAccountBackupProgress = null,
+                    createAccountBackupResult = null
+                )
+            }
+
+            val backupRootPath = settingsDataStore.backupRootPath.first()
+            createNewAccountBackupUseCase.executeWithProgress(prepared.accountId, backupRootPath).collect { result ->
+                when (result) {
+                    is CreateNewAccountBackupResult.Progress -> {
+                        _uiState.update {
+                            it.copy(createAccountBackupProgress = result.progress)
+                        }
+                    }
+                    is CreateNewAccountBackupResult.Success -> {
+                        _uiState.update {
+                            it.copy(
+                                isCreatingAccountBackup = false,
+                                createAccountBackupProgress = null,
+                                createAccountBackupResult = result
+                            )
+                        }
+                    }
+                    is CreateNewAccountBackupResult.Failure -> {
+                        _uiState.update {
+                            it.copy(
+                                isCreatingAccountBackup = false,
+                                createAccountBackupProgress = null,
+                                createAccountBackupResult = result
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

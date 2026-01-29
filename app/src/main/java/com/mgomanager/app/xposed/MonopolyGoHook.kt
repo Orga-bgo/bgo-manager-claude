@@ -11,8 +11,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
  * Main Xposed hook class for Monopoly GO.
  * Intercepts App Set ID, GAID, GSF ID, and Device Name requests.
  *
- * Note: SSAID (Android ID) is now handled by directly modifying settings_ssaid.xml
- * via SsaidManager during restore. This is more reliable than hooking Settings.Secure.
+ * Note: SSAID (Android ID) is spoofed via the hook file written by MGO Manager.
  *
  * Entry point defined in: assets/xposed_init
  */
@@ -55,8 +54,7 @@ class MonopolyGoHook : IXposedHookLoadPackage {
     }
 
     // Note: hookSettingsSecure() has been removed.
-    // SSAID is now handled by directly modifying settings_ssaid.xml via SsaidManager
-    // during restore. This is more reliable and doesn't require the Xposed module to be active.
+    // SSAID is now spoofed via the hook file to avoid touching settings_ssaid.xml.
 
     /**
      * Hook AppSetIdClient.getAppSetIdInfo() to return our custom App Set ID.

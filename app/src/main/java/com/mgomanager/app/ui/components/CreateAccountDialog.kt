@@ -1,14 +1,25 @@
 package com.mgomanager.app.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.mgomanager.app.domain.usecase.CreateAccountBackupProgress
 import com.mgomanager.app.domain.usecase.CreateAccountProgress
+import com.mgomanager.app.domain.usecase.CreateNewAccountBackupResult
+import com.mgomanager.app.domain.usecase.CreateNewAccountResult
 
 /**
  * Dialog for creating a new Monopoly GO account.
@@ -19,9 +30,15 @@ import com.mgomanager.app.domain.usecase.CreateAccountProgress
 fun CreateAccountDialog(
     onDismiss: () -> Unit,
     onConfirm: (accountName: String) -> Unit,
+    onStartBackup: () -> Unit,
+    onNavigateToAccount: (accountId: Long) -> Unit,
     isLoading: Boolean = false,
     progress: CreateAccountProgress? = null,
-    errorMessage: String? = null
+    errorMessage: String? = null,
+    preparedAccount: CreateNewAccountResult.Prepared? = null,
+    isBackingUp: Boolean = false,
+    backupProgress: CreateAccountBackupProgress? = null,
+    backupResult: CreateNewAccountBackupResult? = null
 ) {
     var accountName by remember { mutableStateOf("") }
     var hasAcknowledgedWarning by remember { mutableStateOf(false) }
@@ -40,8 +57,13 @@ fun CreateAccountDialog(
         label = "progress"
     )
 
+    val backupSuccess = backupResult is CreateNewAccountBackupResult.Success
+    val backupFailure = backupResult as? CreateNewAccountBackupResult.Failure
+    val showPrepared = preparedAccount != null
+    val isBusy = isLoading || isBackingUp
+
     AlertDialog(
-        onDismissRequest = { if (!isLoading) onDismiss() },
+        onDismissRequest = { if (!isBusy) onDismiss() },
         title = {
             Text(
                 text = "Neuen Account erstellen",
@@ -53,8 +75,8 @@ fun CreateAccountDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Warning card (hide when loading)
-                if (!isLoading) {
+                // Warning card (hide when loading or prepared)
+                if (!isLoading && !showPrepared && !isBackingUp) {
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.errorContainer
@@ -186,10 +208,55 @@ fun CreateAccountDialog(
                         )
                     }
                 }
+
+                if (showPrepared) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "Phase A abgeschlossen",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(text = "✓ IDs generiert")
+                            Text(text = "✓ Datenbankeinträge gespeichert")
+                            if (backupSuccess) {
+                                Text(text = "✓ Backup erfolgreich")
+                            }
+                        }
+
+                        if (isBackingUp) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = backupProgress?.message ?: "Backup läuft..."
+                                )
+                            }
+                        }
+
+                        backupFailure?.let { failure ->
+                            Text(
+                                text = failure.error,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
-            if (!isLoading) {
+            if (!isBusy && !showPrepared) {
                 TextButton(
                     onClick = {
                         if (nameError != null) {
@@ -203,11 +270,31 @@ fun CreateAccountDialog(
                     Text("Erstellen")
                 }
             }
+            if (showPrepared && !backupSuccess) {
+                TextButton(
+                    onClick = onStartBackup,
+                    enabled = !isBackingUp
+                ) {
+                    Text("Starte nächster Schritt: Account Backup")
+                }
+            }
+            if (showPrepared && backupSuccess) {
+                TextButton(
+                    onClick = { onNavigateToAccount(preparedAccount!!.accountId) }
+                ) {
+                    Text("Zum Account")
+                }
+            }
         },
         dismissButton = {
-            if (!isLoading) {
+            if (!isBusy && !showPrepared) {
                 TextButton(onClick = onDismiss) {
                     Text("Abbrechen")
+                }
+            }
+            if (!isBusy && showPrepared) {
+                TextButton(onClick = onDismiss) {
+                    Text("Schließen")
                 }
             }
         }
