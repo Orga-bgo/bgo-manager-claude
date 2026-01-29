@@ -98,6 +98,11 @@ class SsaidManager @Inject constructor(
                 // Read current file content (handles ABX2 conversion automatically)
                 val currentXmlContent = readSsaidFile()
 
+                // Log XML preview for debugging
+                if (currentXmlContent != null) {
+                    logRepository.logInfo("SSAID", "XML Preview (erste 500 Zeichen): ${currentXmlContent.take(500)}")
+                }
+
                 // Generate new XML content
                 val newXmlContent = if (currentXmlContent == null) {
                     // File doesn't exist or couldn't be read, create new XML
@@ -149,6 +154,8 @@ class SsaidManager @Inject constructor(
     /**
      * Reads the Android ID for a specific package from settings_ssaid.xml.
      *
+     * Note: In abx2xml output, we search by `package` attribute (not `name`).
+     *
      * @param packageName The package name to read the Android ID for
      * @return The Android ID if found, null otherwise
      */
@@ -162,15 +169,17 @@ class SsaidManager @Inject constructor(
 
             for (i in 0 until settingNodes.length) {
                 val settingElement = settingNodes.item(i) as Element
-                val name = settingElement.getAttribute("name")
-                if (name == packageName) {
+                // FIX: Search by package attribute instead of name
+                val pkg = settingElement.getAttribute("package")
+
+                if (pkg == packageName) {
                     return@withContext settingElement.getAttribute("value")
                 }
             }
 
             null
         } catch (e: Exception) {
-            logRepository.logError("SSAID", "Fehler beim Lesen der Android ID: ${e.message}", exception = e)
+            logRepository.logError("SSAID", "getAndroidIdForPackage Exception: ${e.message}", exception = e)
             null
         }
     }
@@ -429,9 +438,11 @@ class SsaidManager @Inject constructor(
 
     /**
      * Extracts the settings version from XML content.
+     * Handles both positive (e.g., "1") and negative (e.g., "-1") version numbers.
      */
     private fun extractSettingsVersion(xmlContent: String) {
-        val versionRegex = Regex("""<settings[^>]*version="(\d+)"[^>]*>""")
+        // Match version including optional negative sign
+        val versionRegex = Regex("""<settings[^>]*version="(-?\d+)"[^>]*>""")
         val match = versionRegex.find(xmlContent)
         if (match != null) {
             originalSettingsVersion = match.groupValues[1]
@@ -574,19 +585,32 @@ class SsaidManager @Inject constructor(
 
     /**
      * Creates a new settings_ssaid.xml with a single package entry.
+     *
+     * Uses abx2xml-compatible format:
+     * - version="-1"
+     * - name: numeric UID (starting at 10000 for user apps)
+     * - defaultSysSet="false" for user apps
+     * - tag="null"
+     * - 2-space indentation
      */
     private fun createNewSsaidXml(packageName: String, androidId: String): String {
-        return """<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
-<settings version="$originalSettingsVersion">
-    <setting id="1" name="$packageName" value="${androidId.lowercase()}" package="$packageName" defaultValue="${androidId.lowercase()}" defaultSysSet="true" />
+        return """<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+<settings version="-1">
+  <setting id="1" name="10000" value="${androidId.lowercase()}" package="$packageName" defaultValue="${androidId.lowercase()}" defaultSysSet="false" tag="null" />
 </settings>
 """
     }
 
     /**
      * Updates existing settings_ssaid.xml with a new or updated package entry.
+     *
+     * Note: In abx2xml output, the XML structure uses:
+     * - `name` attribute: numeric UID (e.g., "10487")
+     * - `package` attribute: actual package name (e.g., "com.scopely.monopolygo")
+     *
+     * We search by `package` attribute to find the correct entry.
      */
-    private fun updateSsaidXml(currentContent: String, packageName: String, androidId: String): String? {
+    private suspend fun updateSsaidXml(currentContent: String, packageName: String, androidId: String): String? {
         return try {
             val doc = parseXml(currentContent) ?: return null
             val settingsElement = doc.documentElement
@@ -594,41 +618,52 @@ class SsaidManager @Inject constructor(
 
             var packageFound = false
             var maxId = 0
+            var maxUid = 0  // For name attribute (numeric UID)
 
-            // Find the package entry and track max ID
+            // Find package entry and track max ID + max UID
             for (i in 0 until settingNodes.length) {
                 val settingElement = settingNodes.item(i) as Element
                 val id = settingElement.getAttribute("id").toIntOrNull() ?: 0
+                val uid = settingElement.getAttribute("name").toIntOrNull() ?: 0
                 maxId = maxOf(maxId, id)
+                maxUid = maxOf(maxUid, uid)
 
-                val name = settingElement.getAttribute("name")
-                if (name == packageName) {
+                // FIX: Search by package attribute instead of name
+                val pkg = settingElement.getAttribute("package")
+
+                if (pkg == packageName) {
                     // Update existing entry
                     settingElement.setAttribute("value", androidId.lowercase())
                     settingElement.setAttribute("defaultValue", androidId.lowercase())
                     packageFound = true
+                    logRepository.logInfo("SSAID", "Existierender Eintrag aktualisiert (id=$id, uid=$uid)")
                 }
             }
 
             // If package not found, add new entry
             if (!packageFound) {
                 val newId = maxId + 1
+                val newUid = maxUid + 1
                 val newSetting = doc.createElement("setting")
                 newSetting.setAttribute("id", newId.toString())
-                newSetting.setAttribute("name", packageName)
+                newSetting.setAttribute("name", newUid.toString())  // Numeric UID
                 newSetting.setAttribute("value", androidId.lowercase())
                 newSetting.setAttribute("package", packageName)
                 newSetting.setAttribute("defaultValue", androidId.lowercase())
-                newSetting.setAttribute("defaultSysSet", "true")
+                newSetting.setAttribute("defaultSysSet", "false")  // User apps = false
+                newSetting.setAttribute("tag", "null")
 
-                // Add with proper indentation
-                settingsElement.appendChild(doc.createTextNode("\n    "))
+                // Add with 2-space indentation (like in original abx2xml output)
+                settingsElement.appendChild(doc.createTextNode("\n  "))
                 settingsElement.appendChild(newSetting)
                 settingsElement.appendChild(doc.createTextNode("\n"))
+
+                logRepository.logInfo("SSAID", "Neuer Eintrag erstellt (id=$newId, uid=$newUid)")
             }
 
             documentToString(doc)
         } catch (e: Exception) {
+            logRepository.logError("SSAID", "updateSsaidXml Exception: ${e.message}", exception = e)
             null
         }
     }
