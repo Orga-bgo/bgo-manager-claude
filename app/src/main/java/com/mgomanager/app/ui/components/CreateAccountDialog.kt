@@ -137,7 +137,7 @@ fun CreateAccountDialog(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             LinearProgressIndicator(
-                                progress = { animatedProgress },
+                                progress = animatedProgress,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(8.dp),
