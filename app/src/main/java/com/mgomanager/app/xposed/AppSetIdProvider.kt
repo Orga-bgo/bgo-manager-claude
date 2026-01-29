@@ -7,7 +7,8 @@ import java.io.File
  * Provider for App Set ID and SSAID from MGO Manager.
  * Reads from a shared file in /data/local/tmp/ which is world-readable.
  *
- * File format: appSetId|ssaid|accountName|timestamp
+ * Old file format: appSetId|ssaid|accountName|timestamp
+ * New extended format: appSetId|ssaid|deviceName|gsfId|gaid|appSetIdDev|accountName|timestamp
  *
  * Also supports SSAID capture mode for backup fallback when settings_ssaid.xml is missing.
  */
@@ -23,10 +24,17 @@ object AppSetIdProvider {
 
     private const val CACHE_DURATION_MS = 5000L // 5 seconds cache
 
+    // Basic IDs
     private var cachedAppSetId: String? = null
     private var cachedSsaid: String? = null
     private var cachedAccountName: String? = null
     private var lastCacheTime: Long = 0
+
+    // Extended IDs for "Create New Account" feature
+    private var cachedDeviceName: String? = null
+    private var cachedGsfId: String? = null
+    private var cachedGaid: String? = null
+    private var cachedAppSetIdDev: String? = null
 
     /**
      * Check if capture mode is active (MGO Manager wants to capture the original Android ID).
@@ -72,34 +80,52 @@ object AppSetIdProvider {
                 return false
             }
 
-            // Parse format: appSetId|ssaid|accountName|timestamp
+            // Parse format based on number of parts
             val parts = content.split("|")
-            if (parts.size < 3) {
-                // Fallback for old format: appSetId|accountName|timestamp
-                if (parts.size >= 2) {
+            when {
+                // New extended format: appSetId|ssaid|deviceName|gsfId|gaid|appSetIdDev|accountName|timestamp
+                parts.size >= 8 -> {
+                    cachedAppSetId = parts[0].takeIf { it.isNotBlank() && it != "nicht vorhanden" }
+                    cachedSsaid = parts[1].takeIf { it.isNotBlank() && it != "nicht vorhanden" }
+                    cachedDeviceName = parts[2].takeIf { it.isNotBlank() }
+                    cachedGsfId = parts[3].takeIf { it.isNotBlank() }
+                    cachedGaid = parts[4].takeIf { it.isNotBlank() }
+                    cachedAppSetIdDev = parts[5].takeIf { it.isNotBlank() }
+                    cachedAccountName = parts[6]
+                    lastCacheTime = currentTime
+                    HookLogger.log("✓ Loaded extended IDs for: $cachedAccountName (AppSetId: $cachedAppSetId, SSAID: $cachedSsaid, DeviceName: $cachedDeviceName)")
+                }
+                // Old format: appSetId|ssaid|accountName|timestamp
+                parts.size >= 3 -> {
+                    cachedAppSetId = parts[0].takeIf { it.isNotBlank() && it != "nicht vorhanden" }
+                    cachedSsaid = parts[1].takeIf { it.isNotBlank() && it != "nicht vorhanden" }
+                    cachedAccountName = parts[2]
+                    // Clear extended IDs for old format
+                    cachedDeviceName = null
+                    cachedGsfId = null
+                    cachedGaid = null
+                    cachedAppSetIdDev = null
+                    lastCacheTime = currentTime
+                    HookLogger.log("✓ Loaded AppSetId: $cachedAppSetId, SSAID: $cachedSsaid (Account: $cachedAccountName)")
+                }
+                // Very old format: appSetId|accountName|timestamp
+                parts.size >= 2 -> {
                     cachedAppSetId = parts[0].takeIf { it.isNotBlank() && it != "nicht vorhanden" }
                     cachedSsaid = null
                     cachedAccountName = parts[1]
+                    cachedDeviceName = null
+                    cachedGsfId = null
+                    cachedGaid = null
+                    cachedAppSetIdDev = null
                     lastCacheTime = currentTime
-                    HookLogger.log("✓ Loaded (old format) AppSetId: ${cachedAppSetId}")
-                    return cachedAppSetId != null
+                    HookLogger.log("✓ Loaded (legacy format) AppSetId: $cachedAppSetId")
                 }
-                HookLogger.log("Invalid shared file format: $content")
-                return false
+                else -> {
+                    HookLogger.log("Invalid shared file format: $content")
+                    return false
+                }
             }
-
-            val appSetId = parts[0]
-            val ssaid = parts[1]
-            val accountName = parts[2]
-
-            // Validate and cache
-            cachedAppSetId = appSetId.takeIf { it.isNotBlank() && it != "nicht vorhanden" }
-            cachedSsaid = ssaid.takeIf { it.isNotBlank() && it != "nicht vorhanden" }
-            cachedAccountName = accountName
-            lastCacheTime = currentTime
-
-            HookLogger.log("✓ Loaded AppSetId: $cachedAppSetId, SSAID: $cachedSsaid (Account: $accountName)")
-            true
+            cachedAppSetId != null
 
         } catch (e: Exception) {
             HookLogger.logError("Failed to read shared file", e)
@@ -125,12 +151,56 @@ object AppSetIdProvider {
     }
 
     /**
+     * Get the Device Name for the current account.
+     */
+    fun getDeviceName(context: Context?): String? {
+        refreshCache()
+        return cachedDeviceName
+    }
+
+    /**
+     * Get the GSF ID (Google Services Framework ID) for the current account.
+     */
+    fun getGsfId(context: Context?): String? {
+        refreshCache()
+        return cachedGsfId
+    }
+
+    /**
+     * Get the GAID (Google Advertising ID) for the current account.
+     */
+    fun getGaid(context: Context?): String? {
+        refreshCache()
+        return cachedGaid
+    }
+
+    /**
+     * Get the Developer App Set ID for the current account.
+     */
+    fun getAppSetIdDev(context: Context?): String? {
+        refreshCache()
+        return cachedAppSetIdDev
+    }
+
+    /**
+     * Get the account name for the current account.
+     */
+    fun getAccountName(): String? {
+        refreshCache()
+        return cachedAccountName
+    }
+
+    /**
      * Invalidate the cache to force a fresh file read on next call.
      */
     fun invalidateCache() {
         cachedAppSetId = null
         cachedSsaid = null
         cachedAccountName = null
+        cachedDeviceName = null
+        cachedGsfId = null
+        cachedGaid = null
+        cachedAppSetIdDev = null
         lastCacheTime = 0
         HookLogger.log("Cache invalidated")
     }

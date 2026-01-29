@@ -46,7 +46,15 @@ data class AccountEntity(
     val filePermissions: String,
 
     // Xposed Hook: Marks the last restored account for App Set ID replacement
-    val isLastRestored: Boolean = false
+    val isLastRestored: Boolean = false,
+
+    // Extended IDs for "Create New Account" feature
+    val deviceName: String? = null,
+    val androidId: String? = null,
+    val appSetIdApp: String? = null,
+    val appSetIdDev: String? = null,
+    val gsfId: String? = null,
+    val generatedGaid: String? = null
 )
 
 /**
@@ -75,7 +83,13 @@ fun AccountEntity.toDomain(): Account {
         fileOwner = fileOwner,
         fileGroup = fileGroup,
         filePermissions = filePermissions,
-        isLastRestored = isLastRestored
+        isLastRestored = isLastRestored,
+        deviceName = deviceName,
+        androidId = androidId,
+        appSetIdApp = appSetIdApp,
+        appSetIdDev = appSetIdDev,
+        gsfId = gsfId,
+        generatedGaid = generatedGaid
     )
 }
 
@@ -102,6 +116,12 @@ fun Account.toEntity(): AccountEntity {
         fileOwner = fileOwner,
         fileGroup = fileGroup,
         filePermissions = filePermissions,
-        isLastRestored = isLastRestored
+        isLastRestored = isLastRestored,
+        deviceName = deviceName,
+        androidId = androidId,
+        appSetIdApp = appSetIdApp,
+        appSetIdDev = appSetIdDev,
+        gsfId = gsfId,
+        generatedGaid = generatedGaid
     )
 }

@@ -9,6 +9,9 @@ import com.mgomanager.app.data.model.RestoreResult
 import com.mgomanager.app.data.repository.AccountRepository
 import com.mgomanager.app.data.repository.BackupRepository
 import com.mgomanager.app.domain.usecase.BackupRequest
+import com.mgomanager.app.domain.usecase.CreateNewAccountRequest
+import com.mgomanager.app.domain.usecase.CreateNewAccountResult
+import com.mgomanager.app.domain.usecase.CreateNewAccountUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -31,7 +34,12 @@ data class HomeUiState(
     val ssaidFallbackState: SsaidFallbackState? = null,
     // Sorting
     val sortMode: String = "lastPlayed",
-    val accountPrefix: String = "MGO_"
+    val accountPrefix: String = "MGO_",
+    // Create New Account
+    val showCreateAccountDialog: Boolean = false,
+    val createAccountResult: CreateNewAccountResult? = null,
+    val isCreatingAccount: Boolean = false,
+    val createAccountError: String? = null
 )
 
 data class DuplicateUserIdInfo(
@@ -55,7 +63,8 @@ data class SsaidFallbackState(
 class HomeViewModel @Inject constructor(
     private val accountRepository: AccountRepository,
     private val backupRepository: BackupRepository,
-    private val settingsDataStore: SettingsDataStore
+    private val settingsDataStore: SettingsDataStore,
+    private val createNewAccountUseCase: CreateNewAccountUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -341,5 +350,92 @@ class HomeViewModel @Inject constructor(
      */
     fun getCapturedSsaid(): String? {
         return _uiState.value.ssaidFallbackState?.capturedSsaid
+    }
+
+    // ============================================================
+    // Create New Account
+    // ============================================================
+
+    /**
+     * Show the create account dialog.
+     */
+    fun showCreateAccountDialog() {
+        _uiState.update {
+            it.copy(
+                showCreateAccountDialog = true,
+                createAccountError = null
+            )
+        }
+    }
+
+    /**
+     * Hide the create account dialog.
+     */
+    fun hideCreateAccountDialog() {
+        _uiState.update {
+            it.copy(
+                showCreateAccountDialog = false,
+                createAccountError = null,
+                isCreatingAccount = false
+            )
+        }
+    }
+
+    /**
+     * Create a new account with the given name.
+     * This clears existing game data and generates new device identifiers.
+     */
+    fun createNewAccount(accountName: String) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isCreatingAccount = true,
+                    createAccountError = null
+                )
+            }
+
+            val prefix = settingsDataStore.accountPrefix.first()
+            val request = CreateNewAccountRequest(
+                accountName = accountName,
+                prefix = prefix
+            )
+
+            val result = createNewAccountUseCase.execute(request)
+
+            when (result) {
+                is CreateNewAccountResult.Success -> {
+                    _uiState.update {
+                        it.copy(
+                            isCreatingAccount = false,
+                            showCreateAccountDialog = false,
+                            createAccountResult = result
+                        )
+                    }
+                }
+                is CreateNewAccountResult.ValidationError -> {
+                    _uiState.update {
+                        it.copy(
+                            isCreatingAccount = false,
+                            createAccountError = result.error
+                        )
+                    }
+                }
+                is CreateNewAccountResult.Failure -> {
+                    _uiState.update {
+                        it.copy(
+                            isCreatingAccount = false,
+                            createAccountError = result.error
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Clear the create account result after showing success message.
+     */
+    fun clearCreateAccountResult() {
+        _uiState.update { it.copy(createAccountResult = null) }
     }
 }
